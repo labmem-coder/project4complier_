@@ -1,0 +1,278 @@
+LL(1) Prediction Parse Table
+============================
+
+[programstruct]
+  on 'program' -> programstruct ::= program_head ; program_body .
+
+[program_body]
+  on 'begin' -> program_body ::= const_declarations var_declarations subprogram_declarations compound_statement
+  on 'const' -> program_body ::= const_declarations var_declarations subprogram_declarations compound_statement
+  on 'function' -> program_body ::= const_declarations var_declarations subprogram_declarations compound_statement
+  on 'procedure' -> program_body ::= const_declarations var_declarations subprogram_declarations compound_statement
+  on 'var' -> program_body ::= const_declarations var_declarations subprogram_declarations compound_statement
+
+[idlist]
+  on 'id' -> idlist ::= id idlist'
+
+[idlist']
+  on ')' -> idlist' ::= ε
+  on ',' -> idlist' ::= , id idlist'
+  on ':' -> idlist' ::= ε
+
+[const_declarations]
+  on 'begin' -> const_declarations ::= ε
+  on 'const' -> const_declarations ::= const const_decl_list
+  on 'function' -> const_declarations ::= ε
+  on 'procedure' -> const_declarations ::= ε
+  on 'var' -> const_declarations ::= ε
+
+[const_decl_list]
+  on 'id' -> const_decl_list ::= id = const_value ; const_decl_list_tail
+
+[const_decl_list_tail]
+  on 'begin' -> const_decl_list_tail ::= ε
+  on 'function' -> const_decl_list_tail ::= ε
+  on 'id' -> const_decl_list_tail ::= id = const_value ; const_decl_list_tail
+  on 'procedure' -> const_decl_list_tail ::= ε
+  on 'var' -> const_decl_list_tail ::= ε
+
+[const_value]
+  on '+' -> const_value ::= + num
+  on '-' -> const_value ::= - num
+  on 'letter' -> const_value ::= letter
+  on 'num' -> const_value ::= num
+
+[var_declarations]
+  on 'begin' -> var_declarations ::= ε
+  on 'function' -> var_declarations ::= ε
+  on 'procedure' -> var_declarations ::= ε
+  on 'var' -> var_declarations ::= var var_decl_list
+
+[var_decl_list_tail]
+  on 'begin' -> var_decl_list_tail ::= ε
+  on 'function' -> var_decl_list_tail ::= ε
+  on 'id' -> var_decl_list_tail ::= id idlist' : type ; var_decl_list_tail
+  on 'procedure' -> var_decl_list_tail ::= ε
+
+[type]
+  on 'array' -> type ::= array [ period ] of basic_type
+  on 'boolean' -> type ::= basic_type
+  on 'char' -> type ::= basic_type
+  on 'integer' -> type ::= basic_type
+  on 'real' -> type ::= basic_type
+
+[basic_type]
+  on 'boolean' -> basic_type ::= boolean
+  on 'char' -> basic_type ::= char
+  on 'integer' -> basic_type ::= integer
+  on 'real' -> basic_type ::= real
+
+[period]
+  on 'num' -> period ::= num .. num period'
+
+[period']
+  on ',' -> period' ::= , num .. num period'
+  on ']' -> period' ::= ε
+
+[subprogram_declarations]
+  on 'begin' -> subprogram_declarations ::= ε
+  on 'function' -> subprogram_declarations ::= subprogram ; subprogram_declarations
+  on 'procedure' -> subprogram_declarations ::= subprogram ; subprogram_declarations
+
+[subprogram]
+  on 'function' -> subprogram ::= subprogram_head ; subprogram_body
+  on 'procedure' -> subprogram ::= subprogram_head ; subprogram_body
+
+[subprogram_head]
+  on 'function' -> subprogram_head ::= function id formal_parameter : basic_type
+  on 'procedure' -> subprogram_head ::= procedure id formal_parameter
+
+[formal_parameter]
+  on '(' -> formal_parameter ::= ( parameter_list )
+  on ':' -> formal_parameter ::= ε
+  on ';' -> formal_parameter ::= ε
+
+[parameter_list]
+  on 'id' -> parameter_list ::= parameter parameter_list'
+  on 'var' -> parameter_list ::= parameter parameter_list'
+
+[parameter_list']
+  on ')' -> parameter_list' ::= ε
+  on ';' -> parameter_list' ::= ; parameter parameter_list'
+
+[parameter]
+  on 'id' -> parameter ::= value_parameter
+  on 'var' -> parameter ::= var_parameter
+
+[var_parameter]
+  on 'var' -> var_parameter ::= var value_parameter
+
+[compound_statement]
+  on 'begin' -> compound_statement ::= begin statement_list end
+
+[statement_list]
+  on ';' -> statement_list ::= statement statement_list'
+  on 'begin' -> statement_list ::= statement statement_list'
+  on 'end' -> statement_list ::= statement statement_list'
+  on 'for' -> statement_list ::= statement statement_list'
+  on 'id' -> statement_list ::= statement statement_list'
+  on 'if' -> statement_list ::= statement statement_list'
+  on 'read' -> statement_list ::= statement statement_list'
+  on 'write' -> statement_list ::= statement statement_list'
+
+[statement_list']
+  on ';' -> statement_list' ::= ; statement statement_list'
+  on 'end' -> statement_list' ::= ε
+
+[statement]
+  on ';' -> statement ::= ε
+  on 'begin' -> statement ::= begin statement_list end
+  on 'else' -> statement ::= ε
+  on 'end' -> statement ::= ε
+  on 'for' -> statement ::= for id assignop expression to expression do statement
+  on 'id' -> statement ::= id statement_id_tail
+  on 'if' -> statement ::= if expression then statement else_part
+  on 'read' -> statement ::= read ( variable_list )
+  on 'write' -> statement ::= write ( expression_list )
+
+[statement_id_tail]
+  on '(' -> statement_id_tail ::= ( expression_list )
+  on ';' -> statement_id_tail ::= ε
+  on '[' -> statement_id_tail ::= [ expression_list ] assignop expression
+  on 'assignop' -> statement_id_tail ::= assignop expression
+  on 'else' -> statement_id_tail ::= ε
+  on 'end' -> statement_id_tail ::= ε
+
+[variable_list]
+  on 'id' -> variable_list ::= variable variable_list'
+
+[variable_list']
+  on ')' -> variable_list' ::= ε
+  on ',' -> variable_list' ::= , variable variable_list'
+
+[variable]
+  on 'id' -> variable ::= id id_varpart
+
+[id_varpart]
+  on ')' -> id_varpart ::= ε
+  on ',' -> id_varpart ::= ε
+  on '[' -> id_varpart ::= [ expression_list ]
+
+[else_part]
+  on ';' -> else_part ::= ε
+  on 'else' -> else_part ::= else statement
+  on 'end' -> else_part ::= ε
+
+[expression_list]
+  on '(' -> expression_list ::= expression expression_list'
+  on '-' -> expression_list ::= expression expression_list'
+  on 'id' -> expression_list ::= expression expression_list'
+  on 'not' -> expression_list ::= expression expression_list'
+  on 'num' -> expression_list ::= expression expression_list'
+
+[expression_list']
+  on ')' -> expression_list' ::= ε
+  on ',' -> expression_list' ::= , expression expression_list'
+  on ']' -> expression_list' ::= ε
+
+[expression]
+  on '(' -> expression ::= simple_expression expression_tail
+  on '-' -> expression ::= simple_expression expression_tail
+  on 'id' -> expression ::= simple_expression expression_tail
+  on 'not' -> expression ::= simple_expression expression_tail
+  on 'num' -> expression ::= simple_expression expression_tail
+
+[expression_tail]
+  on ')' -> expression_tail ::= ε
+  on ',' -> expression_tail ::= ε
+  on ';' -> expression_tail ::= ε
+  on ']' -> expression_tail ::= ε
+  on 'do' -> expression_tail ::= ε
+  on 'else' -> expression_tail ::= ε
+  on 'end' -> expression_tail ::= ε
+  on 'relop' -> expression_tail ::= relop simple_expression
+  on 'then' -> expression_tail ::= ε
+  on 'to' -> expression_tail ::= ε
+
+[simple_expression]
+  on '(' -> simple_expression ::= term simple_expression'
+  on '-' -> simple_expression ::= term simple_expression'
+  on 'id' -> simple_expression ::= term simple_expression'
+  on 'not' -> simple_expression ::= term simple_expression'
+  on 'num' -> simple_expression ::= term simple_expression'
+
+[simple_expression']
+  on ')' -> simple_expression' ::= ε
+  on ',' -> simple_expression' ::= ε
+  on ';' -> simple_expression' ::= ε
+  on ']' -> simple_expression' ::= ε
+  on 'addop' -> simple_expression' ::= addop term simple_expression'
+  on 'do' -> simple_expression' ::= ε
+  on 'else' -> simple_expression' ::= ε
+  on 'end' -> simple_expression' ::= ε
+  on 'relop' -> simple_expression' ::= ε
+  on 'then' -> simple_expression' ::= ε
+  on 'to' -> simple_expression' ::= ε
+
+[term]
+  on '(' -> term ::= factor term'
+  on '-' -> term ::= factor term'
+  on 'id' -> term ::= factor term'
+  on 'not' -> term ::= factor term'
+  on 'num' -> term ::= factor term'
+
+[term']
+  on ')' -> term' ::= ε
+  on ',' -> term' ::= ε
+  on ';' -> term' ::= ε
+  on ']' -> term' ::= ε
+  on 'addop' -> term' ::= ε
+  on 'do' -> term' ::= ε
+  on 'else' -> term' ::= ε
+  on 'end' -> term' ::= ε
+  on 'mulop' -> term' ::= mulop factor term'
+  on 'relop' -> term' ::= ε
+  on 'then' -> term' ::= ε
+  on 'to' -> term' ::= ε
+
+[factor]
+  on '(' -> factor ::= ( expression )
+  on '-' -> factor ::= - factor
+  on 'id' -> factor ::= id factor_id_tail
+  on 'not' -> factor ::= not factor
+  on 'num' -> factor ::= num
+
+[factor_id_tail]
+  on '(' -> factor_id_tail ::= ( expression_list )
+  on ')' -> factor_id_tail ::= ε
+  on ',' -> factor_id_tail ::= ε
+  on ';' -> factor_id_tail ::= ε
+  on '[' -> factor_id_tail ::= [ expression_list ]
+  on ']' -> factor_id_tail ::= ε
+  on 'addop' -> factor_id_tail ::= ε
+  on 'do' -> factor_id_tail ::= ε
+  on 'else' -> factor_id_tail ::= ε
+  on 'end' -> factor_id_tail ::= ε
+  on 'mulop' -> factor_id_tail ::= ε
+  on 'relop' -> factor_id_tail ::= ε
+  on 'then' -> factor_id_tail ::= ε
+  on 'to' -> factor_id_tail ::= ε
+
+[program_head]
+  on 'program' -> program_head ::= program id program_head'
+
+[program_head']
+  on '(' -> program_head' ::= ( idlist )
+  on ';' -> program_head' ::= ε
+
+[var_decl_list]
+  on 'id' -> var_decl_list ::= id idlist' : type ; var_decl_list_tail
+
+[value_parameter]
+  on 'id' -> value_parameter ::= id idlist' : basic_type
+
+[subprogram_body]
+  on 'begin' -> subprogram_body ::= begin statement_list end
+  on 'const' -> subprogram_body ::= const const_decl_list var_declarations compound_statement
+  on 'var' -> subprogram_body ::= var var_decl_list compound_statement
+

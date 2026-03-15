@@ -1,0 +1,93 @@
+=== Transformed LL(1) Grammar ===
+
+programstruct -> program_head ; program_body .
+program_body -> const_declarations var_declarations subprogram_declarations compound_statement
+idlist -> id idlist'
+idlist' -> , id idlist'
+idlist' -> ε
+const_declarations -> ε
+const_declarations -> const const_decl_list
+const_decl_list -> id = const_value ; const_decl_list_tail
+const_decl_list_tail -> id = const_value ; const_decl_list_tail
+const_decl_list_tail -> ε
+const_value -> + num
+const_value -> - num
+const_value -> num
+const_value -> letter
+var_declarations -> ε
+var_declarations -> var var_decl_list
+var_decl_list_tail -> ε
+type -> basic_type
+type -> array [ period ] of basic_type
+basic_type -> integer
+basic_type -> real
+basic_type -> boolean
+basic_type -> char
+period -> num .. num period'
+period' -> , num .. num period'
+period' -> ε
+subprogram_declarations -> ε
+subprogram_declarations -> subprogram ; subprogram_declarations
+subprogram -> subprogram_head ; subprogram_body
+subprogram_head -> procedure id formal_parameter
+subprogram_head -> function id formal_parameter : basic_type
+formal_parameter -> ε
+formal_parameter -> ( parameter_list )
+parameter_list -> parameter parameter_list'
+parameter_list' -> ; parameter parameter_list'
+parameter_list' -> ε
+parameter -> var_parameter
+parameter -> value_parameter
+var_parameter -> var value_parameter
+compound_statement -> begin statement_list end
+statement_list -> statement statement_list'
+statement_list' -> ; statement statement_list'
+statement_list' -> ε
+statement -> ε
+statement -> id statement_id_tail
+statement -> begin statement_list end
+statement -> if expression then statement else_part
+statement -> for id assignop expression to expression do statement
+statement -> read ( variable_list )
+statement -> write ( expression_list )
+statement_id_tail -> assignop expression
+statement_id_tail -> [ expression_list ] assignop expression
+statement_id_tail -> ( expression_list )
+statement_id_tail -> ε
+variable_list -> variable variable_list'
+variable_list' -> , variable variable_list'
+variable_list' -> ε
+variable -> id id_varpart
+id_varpart -> ε
+id_varpart -> [ expression_list ]
+else_part -> ε
+else_part -> else statement
+expression_list -> expression expression_list'
+expression_list' -> , expression expression_list'
+expression_list' -> ε
+expression -> simple_expression expression_tail
+expression_tail -> relop simple_expression
+expression_tail -> ε
+simple_expression -> term simple_expression'
+simple_expression' -> addop term simple_expression'
+simple_expression' -> ε
+term -> factor term'
+term' -> mulop factor term'
+term' -> ε
+factor -> num
+factor -> id factor_id_tail
+factor -> ( expression )
+factor -> not factor
+factor -> - factor
+factor_id_tail -> [ expression_list ]
+factor_id_tail -> ( expression_list )
+factor_id_tail -> ε
+program_head -> program id program_head'
+program_head' -> ( idlist )
+program_head' -> ε
+var_decl_list -> id idlist' : type ; var_decl_list_tail
+var_decl_list_tail -> id idlist' : type ; var_decl_list_tail
+value_parameter -> id idlist' : basic_type
+subprogram_body -> const const_decl_list var_declarations compound_statement
+subprogram_body -> var var_decl_list compound_statement
+subprogram_body -> begin statement_list end

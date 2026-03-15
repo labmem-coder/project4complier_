@@ -1,0 +1,261 @@
+Parse Process Log
+=================
+
+------------------------------------------------------------
+Step   Stack                                    Input                          Action
+------------------------------------------------------------
+1      $ programstruct                          program example ( input ,...   PREDICT programstruct -> program_head ; program_body .
+2      $ . program_body ; program_head          program example ( input ,...   PREDICT program_head -> program id program_head'
+3      $ . program_body ; program_head' id...   program example ( input ,...   MATCH 'program'
+4      $ . program_body ; program_head' id      example ( input , output ...   MATCH 'id'
+5      $ . program_body ; program_head'         ( input , output ) ; cons...   PREDICT program_head' -> ( idlist )
+6      $ . program_body ; ) idlist (            ( input , output ) ; cons...   MATCH '('
+7      $ . program_body ; ) idlist              input , output ) ; const ...   PREDICT idlist -> id idlist'
+8      $ . program_body ; ) idlist' id          input , output ) ; const ...   MATCH 'id'
+9      $ . program_body ; ) idlist'             , output ) ; const MAX = ...   PREDICT idlist' -> , id idlist'
+10     $ . program_body ; ) idlist' id ,        , output ) ; const MAX = ...   MATCH ','
+11     $ . program_body ; ) idlist' id          output ) ; const MAX = 10...   MATCH 'id'
+12     $ . program_body ; ) idlist'             ) ; const MAX = 100 ; var...   PREDICT idlist' -> ε
+13     $ . program_body ; )                     ) ; const MAX = 100 ; var...   MATCH ')'
+14     $ . program_body ;                       ; const MAX = 100 ; var a...   MATCH ';'
+15     $ . program_body                         const MAX = 100 ; var arr...   PREDICT program_body -> const_declarations var_declarations subprogram_declarations compound_statement
+16     $ . compound_statement subprogram_d...   const MAX = 100 ; var arr...   PREDICT const_declarations -> const const_decl_list
+17     $ . compound_statement subprogram_d...   const MAX = 100 ; var arr...   MATCH 'const'
+18     $ . compound_statement subprogram_d...   MAX = 100 ; var arr : arr...   PREDICT const_decl_list -> id = const_value ; const_decl_list_tail
+19     $ . compound_statement subprogram_d...   MAX = 100 ; var arr : arr...   MATCH 'id'
+20     $ . compound_statement subprogram_d...   = 100 ; var arr : array [...   MATCH '='
+21     $ . compound_statement subprogram_d...   100 ; var arr : array [ 1...   PREDICT const_value -> num
+22     $ . compound_statement subprogram_d...   100 ; var arr : array [ 1...   MATCH 'num'
+23     $ . compound_statement subprogram_d...   ; var arr : array [ 1 .. ...   MATCH ';'
+24     $ . compound_statement subprogram_d...   var arr : array [ 1 .. 10...   PREDICT const_decl_list_tail -> ε
+25     $ . compound_statement subprogram_d...   var arr : array [ 1 .. 10...   PREDICT var_declarations -> var var_decl_list
+26     $ . compound_statement subprogram_d...   var arr : array [ 1 .. 10...   MATCH 'var'
+27     $ . compound_statement subprogram_d...   arr : array [ 1 .. 10 ] o...   PREDICT var_decl_list -> id idlist' : type ; var_decl_list_tail
+28     $ . compound_statement subprogram_d...   arr : array [ 1 .. 10 ] o...   MATCH 'id'
+29     $ . compound_statement subprogram_d...   : array [ 1 .. 10 ] of in...   PREDICT idlist' -> ε
+30     $ . compound_statement subprogram_d...   : array [ 1 .. 10 ] of in...   MATCH ':'
+31     $ . compound_statement subprogram_d...   array [ 1 .. 10 ] of inte...   PREDICT type -> array [ period ] of basic_type
+32     $ . compound_statement subprogram_d...   array [ 1 .. 10 ] of inte...   MATCH 'array'
+33     $ . compound_statement subprogram_d...   [ 1 .. 10 ] of integer ; ...   MATCH '['
+34     $ . compound_statement subprogram_d...   1 .. 10 ] of integer ; i ...   PREDICT period -> num .. num period'
+35     $ . compound_statement subprogram_d...   1 .. 10 ] of integer ; i ...   MATCH 'num'
+36     $ . compound_statement subprogram_d...   .. 10 ] of integer ; i , ...   MATCH '..'
+37     $ . compound_statement subprogram_d...   10 ] of integer ; i , sum...   MATCH 'num'
+38     $ . compound_statement subprogram_d...   ] of integer ; i , sum : ...   PREDICT period' -> ε
+39     $ . compound_statement subprogram_d...   ] of integer ; i , sum : ...   MATCH ']'
+40     $ . compound_statement subprogram_d...   of integer ; i , sum : in...   MATCH 'of'
+41     $ . compound_statement subprogram_d...   integer ; i , sum : integ...   PREDICT basic_type -> integer
+42     $ . compound_statement subprogram_d...   integer ; i , sum : integ...   MATCH 'integer'
+43     $ . compound_statement subprogram_d...   ; i , sum : integer ; pro...   MATCH ';'
+44     $ . compound_statement subprogram_d...   i , sum : integer ; proce...   PREDICT var_decl_list_tail -> id idlist' : type ; var_decl_list_tail
+45     $ . compound_statement subprogram_d...   i , sum : integer ; proce...   MATCH 'id'
+46     $ . compound_statement subprogram_d...   , sum : integer ; procedu...   PREDICT idlist' -> , id idlist'
+47     $ . compound_statement subprogram_d...   , sum : integer ; procedu...   MATCH ','
+48     $ . compound_statement subprogram_d...   sum : integer ; procedure...   MATCH 'id'
+49     $ . compound_statement subprogram_d...   : integer ; procedure ini...   PREDICT idlist' -> ε
+50     $ . compound_statement subprogram_d...   : integer ; procedure ini...   MATCH ':'
+51     $ . compound_statement subprogram_d...   integer ; procedure init ...   PREDICT type -> basic_type
+52     $ . compound_statement subprogram_d...   integer ; procedure init ...   PREDICT basic_type -> integer
+53     $ . compound_statement subprogram_d...   integer ; procedure init ...   MATCH 'integer'
+54     $ . compound_statement subprogram_d...   ; procedure init ( n : in...   MATCH ';'
+55     $ . compound_statement subprogram_d...   procedure init ( n : inte...   PREDICT var_decl_list_tail -> ε
+56     $ . compound_statement subprogram_d...   procedure init ( n : inte...   PREDICT subprogram_declarations -> subprogram ; subprogram_declarations
+57     $ . compound_statement subprogram_d...   procedure init ( n : inte...   PREDICT subprogram -> subprogram_head ; subprogram_body
+58     $ . compound_statement subprogram_d...   procedure init ( n : inte...   PREDICT subprogram_head -> procedure id formal_parameter
+59     $ . compound_statement subprogram_d...   procedure init ( n : inte...   MATCH 'procedure'
+60     $ . compound_statement subprogram_d...   init ( n : integer ) ; va...   MATCH 'id'
+61     $ . compound_statement subprogram_d...   ( n : integer ) ; var j :...   PREDICT formal_parameter -> ( parameter_list )
+62     $ . compound_statement subprogram_d...   ( n : integer ) ; var j :...   MATCH '('
+63     $ . compound_statement subprogram_d...   n : integer ) ; var j : i...   PREDICT parameter_list -> parameter parameter_list'
+64     $ . compound_statement subprogram_d...   n : integer ) ; var j : i...   PREDICT parameter -> value_parameter
+65     $ . compound_statement subprogram_d...   n : integer ) ; var j : i...   PREDICT value_parameter -> id idlist' : basic_type
+66     $ . compound_statement subprogram_d...   n : integer ) ; var j : i...   MATCH 'id'
+67     $ . compound_statement subprogram_d...   : integer ) ; var j : int...   PREDICT idlist' -> ε
+68     $ . compound_statement subprogram_d...   : integer ) ; var j : int...   MATCH ':'
+69     $ . compound_statement subprogram_d...   integer ) ; var j : integ...   PREDICT basic_type -> integer
+70     $ . compound_statement subprogram_d...   integer ) ; var j : integ...   MATCH 'integer'
+71     $ . compound_statement subprogram_d...   ) ; var j : integer ; beg...   PREDICT parameter_list' -> ε
+72     $ . compound_statement subprogram_d...   ) ; var j : integer ; beg...   MATCH ')'
+73     $ . compound_statement subprogram_d...   ; var j : integer ; begin...   MATCH ';'
+74     $ . compound_statement subprogram_d...   var j : integer ; begin f...   PREDICT subprogram_body -> var var_decl_list compound_statement
+75     $ . compound_statement subprogram_d...   var j : integer ; begin f...   MATCH 'var'
+76     $ . compound_statement subprogram_d...   j : integer ; begin for j...   PREDICT var_decl_list -> id idlist' : type ; var_decl_list_tail
+77     $ . compound_statement subprogram_d...   j : integer ; begin for j...   MATCH 'id'
+78     $ . compound_statement subprogram_d...   : integer ; begin for j :...   PREDICT idlist' -> ε
+79     $ . compound_statement subprogram_d...   : integer ; begin for j :...   MATCH ':'
+80     $ . compound_statement subprogram_d...   integer ; begin for j := ...   PREDICT type -> basic_type
+81     $ . compound_statement subprogram_d...   integer ; begin for j := ...   PREDICT basic_type -> integer
+82     $ . compound_statement subprogram_d...   integer ; begin for j := ...   MATCH 'integer'
+83     $ . compound_statement subprogram_d...   ; begin for j := 1 to n d...   MATCH ';'
+84     $ . compound_statement subprogram_d...   begin for j := 1 to n do ...   PREDICT var_decl_list_tail -> ε
+85     $ . compound_statement subprogram_d...   begin for j := 1 to n do ...   PREDICT compound_statement -> begin statement_list end
+86     $ . compound_statement subprogram_d...   begin for j := 1 to n do ...   MATCH 'begin'
+87     $ . compound_statement subprogram_d...   for j := 1 to n do arr [ ...   PREDICT statement_list -> statement statement_list'
+88     $ . compound_statement subprogram_d...   for j := 1 to n do arr [ ...   PREDICT statement -> for id assignop expression to expression do statement
+89     $ . compound_statement subprogram_d...   for j := 1 to n do arr [ ...   MATCH 'for'
+90     $ . compound_statement subprogram_d...   j := 1 to n do arr [ j ] ...   MATCH 'id'
+91     $ . compound_statement subprogram_d...   := 1 to n do arr [ j ] :=...   MATCH 'assignop'
+92     $ . compound_statement subprogram_d...   1 to n do arr [ j ] := j ...   PREDICT expression -> simple_expression expression_tail
+93     $ . compound_statement subprogram_d...   1 to n do arr [ j ] := j ...   PREDICT simple_expression -> term simple_expression'
+94     $ . compound_statement subprogram_d...   1 to n do arr [ j ] := j ...   PREDICT term -> factor term'
+95     $ . compound_statement subprogram_d...   1 to n do arr [ j ] := j ...   PREDICT factor -> num
+96     $ . compound_statement subprogram_d...   1 to n do arr [ j ] := j ...   MATCH 'num'
+97     $ . compound_statement subprogram_d...   to n do arr [ j ] := j * ...   PREDICT term' -> ε
+98     $ . compound_statement subprogram_d...   to n do arr [ j ] := j * ...   PREDICT simple_expression' -> ε
+99     $ . compound_statement subprogram_d...   to n do arr [ j ] := j * ...   PREDICT expression_tail -> ε
+100    $ . compound_statement subprogram_d...   to n do arr [ j ] := j * ...   MATCH 'to'
+101    $ . compound_statement subprogram_d...   n do arr [ j ] := j * 2 ...    PREDICT expression -> simple_expression expression_tail
+102    $ . compound_statement subprogram_d...   n do arr [ j ] := j * 2 ...    PREDICT simple_expression -> term simple_expression'
+103    $ . compound_statement subprogram_d...   n do arr [ j ] := j * 2 ...    PREDICT term -> factor term'
+104    $ . compound_statement subprogram_d...   n do arr [ j ] := j * 2 ...    PREDICT factor -> id factor_id_tail
+105    $ . compound_statement subprogram_d...   n do arr [ j ] := j * 2 ...    MATCH 'id'
+106    $ . compound_statement subprogram_d...   do arr [ j ] := j * 2 end...   PREDICT factor_id_tail -> ε
+107    $ . compound_statement subprogram_d...   do arr [ j ] := j * 2 end...   PREDICT term' -> ε
+108    $ . compound_statement subprogram_d...   do arr [ j ] := j * 2 end...   PREDICT simple_expression' -> ε
+109    $ . compound_statement subprogram_d...   do arr [ j ] := j * 2 end...   PREDICT expression_tail -> ε
+110    $ . compound_statement subprogram_d...   do arr [ j ] := j * 2 end...   MATCH 'do'
+111    $ . compound_statement subprogram_d...   arr [ j ] := j * 2 end ; ...   PREDICT statement -> id statement_id_tail
+112    $ . compound_statement subprogram_d...   arr [ j ] := j * 2 end ; ...   MATCH 'id'
+113    $ . compound_statement subprogram_d...   [ j ] := j * 2 end ; begi...   PREDICT statement_id_tail -> [ expression_list ] assignop expression
+114    $ . compound_statement subprogram_d...   [ j ] := j * 2 end ; begi...   MATCH '['
+115    $ . compound_statement subprogram_d...   j ] := j * 2 end ; begin ...   PREDICT expression_list -> expression expression_list'
+116    $ . compound_statement subprogram_d...   j ] := j * 2 end ; begin ...   PREDICT expression -> simple_expression expression_tail
+117    $ . compound_statement subprogram_d...   j ] := j * 2 end ; begin ...   PREDICT simple_expression -> term simple_expression'
+118    $ . compound_statement subprogram_d...   j ] := j * 2 end ; begin ...   PREDICT term -> factor term'
+119    $ . compound_statement subprogram_d...   j ] := j * 2 end ; begin ...   PREDICT factor -> id factor_id_tail
+120    $ . compound_statement subprogram_d...   j ] := j * 2 end ; begin ...   MATCH 'id'
+121    $ . compound_statement subprogram_d...   ] := j * 2 end ; begin in...   PREDICT factor_id_tail -> ε
+122    $ . compound_statement subprogram_d...   ] := j * 2 end ; begin in...   PREDICT term' -> ε
+123    $ . compound_statement subprogram_d...   ] := j * 2 end ; begin in...   PREDICT simple_expression' -> ε
+124    $ . compound_statement subprogram_d...   ] := j * 2 end ; begin in...   PREDICT expression_tail -> ε
+125    $ . compound_statement subprogram_d...   ] := j * 2 end ; begin in...   PREDICT expression_list' -> ε
+126    $ . compound_statement subprogram_d...   ] := j * 2 end ; begin in...   MATCH ']'
+127    $ . compound_statement subprogram_d...   := j * 2 end ; begin init...   MATCH 'assignop'
+128    $ . compound_statement subprogram_d...   j * 2 end ; begin init ( ...   PREDICT expression -> simple_expression expression_tail
+129    $ . compound_statement subprogram_d...   j * 2 end ; begin init ( ...   PREDICT simple_expression -> term simple_expression'
+130    $ . compound_statement subprogram_d...   j * 2 end ; begin init ( ...   PREDICT term -> factor term'
+131    $ . compound_statement subprogram_d...   j * 2 end ; begin init ( ...   PREDICT factor -> id factor_id_tail
+132    $ . compound_statement subprogram_d...   j * 2 end ; begin init ( ...   MATCH 'id'
+133    $ . compound_statement subprogram_d...   * 2 end ; begin init ( 10...   PREDICT factor_id_tail -> ε
+134    $ . compound_statement subprogram_d...   * 2 end ; begin init ( 10...   PREDICT term' -> mulop factor term'
+135    $ . compound_statement subprogram_d...   * 2 end ; begin init ( 10...   MATCH 'mulop'
+136    $ . compound_statement subprogram_d...   2 end ; begin init ( 10 )...   PREDICT factor -> num
+137    $ . compound_statement subprogram_d...   2 end ; begin init ( 10 )...   MATCH 'num'
+138    $ . compound_statement subprogram_d...   end ; begin init ( 10 ) ;...   PREDICT term' -> ε
+139    $ . compound_statement subprogram_d...   end ; begin init ( 10 ) ;...   PREDICT simple_expression' -> ε
+140    $ . compound_statement subprogram_d...   end ; begin init ( 10 ) ;...   PREDICT expression_tail -> ε
+141    $ . compound_statement subprogram_d...   end ; begin init ( 10 ) ;...   PREDICT statement_list' -> ε
+142    $ . compound_statement subprogram_d...   end ; begin init ( 10 ) ;...   MATCH 'end'
+143    $ . compound_statement subprogram_d...   ; begin init ( 10 ) ; sum...   MATCH ';'
+144    $ . compound_statement subprogram_d...   begin init ( 10 ) ; sum :...   PREDICT subprogram_declarations -> ε
+145    $ . compound_statement                   begin init ( 10 ) ; sum :...   PREDICT compound_statement -> begin statement_list end
+146    $ . end statement_list begin             begin init ( 10 ) ; sum :...   MATCH 'begin'
+147    $ . end statement_list                   init ( 10 ) ; sum := 0 ; ...   PREDICT statement_list -> statement statement_list'
+148    $ . end statement_list' statement        init ( 10 ) ; sum := 0 ; ...   PREDICT statement -> id statement_id_tail
+149    $ . end statement_list' statement_i...   init ( 10 ) ; sum := 0 ; ...   MATCH 'id'
+150    $ . end statement_list' statement_i...   ( 10 ) ; sum := 0 ; for i...   PREDICT statement_id_tail -> ( expression_list )
+151    $ . end statement_list' ) expressio...   ( 10 ) ; sum := 0 ; for i...   MATCH '('
+152    $ . end statement_list' ) expressio...   10 ) ; sum := 0 ; for i :...   PREDICT expression_list -> expression expression_list'
+153    $ . end statement_list' ) expressio...   10 ) ; sum := 0 ; for i :...   PREDICT expression -> simple_expression expression_tail
+154    $ . end statement_list' ) expressio...   10 ) ; sum := 0 ; for i :...   PREDICT simple_expression -> term simple_expression'
+155    $ . end statement_list' ) expressio...   10 ) ; sum := 0 ; for i :...   PREDICT term -> factor term'
+156    $ . end statement_list' ) expressio...   10 ) ; sum := 0 ; for i :...   PREDICT factor -> num
+157    $ . end statement_list' ) expressio...   10 ) ; sum := 0 ; for i :...   MATCH 'num'
+158    $ . end statement_list' ) expressio...   ) ; sum := 0 ; for i := 1...   PREDICT term' -> ε
+159    $ . end statement_list' ) expressio...   ) ; sum := 0 ; for i := 1...   PREDICT simple_expression' -> ε
+160    $ . end statement_list' ) expressio...   ) ; sum := 0 ; for i := 1...   PREDICT expression_tail -> ε
+161    $ . end statement_list' ) expressio...   ) ; sum := 0 ; for i := 1...   PREDICT expression_list' -> ε
+162    $ . end statement_list' )                ) ; sum := 0 ; for i := 1...   MATCH ')'
+163    $ . end statement_list'                  ; sum := 0 ; for i := 1 t...   PREDICT statement_list' -> ; statement statement_list'
+164    $ . end statement_list' statement ;      ; sum := 0 ; for i := 1 t...   MATCH ';'
+165    $ . end statement_list' statement        sum := 0 ; for i := 1 to ...   PREDICT statement -> id statement_id_tail
+166    $ . end statement_list' statement_i...   sum := 0 ; for i := 1 to ...   MATCH 'id'
+167    $ . end statement_list' statement_i...   := 0 ; for i := 1 to 10 d...   PREDICT statement_id_tail -> assignop expression
+168    $ . end statement_list' expression ...   := 0 ; for i := 1 to 10 d...   MATCH 'assignop'
+169    $ . end statement_list' expression       0 ; for i := 1 to 10 do s...   PREDICT expression -> simple_expression expression_tail
+170    $ . end statement_list' expression_...   0 ; for i := 1 to 10 do s...   PREDICT simple_expression -> term simple_expression'
+171    $ . end statement_list' expression_...   0 ; for i := 1 to 10 do s...   PREDICT term -> factor term'
+172    $ . end statement_list' expression_...   0 ; for i := 1 to 10 do s...   PREDICT factor -> num
+173    $ . end statement_list' expression_...   0 ; for i := 1 to 10 do s...   MATCH 'num'
+174    $ . end statement_list' expression_...   ; for i := 1 to 10 do sum...   PREDICT term' -> ε
+175    $ . end statement_list' expression_...   ; for i := 1 to 10 do sum...   PREDICT simple_expression' -> ε
+176    $ . end statement_list' expression_...   ; for i := 1 to 10 do sum...   PREDICT expression_tail -> ε
+177    $ . end statement_list'                  ; for i := 1 to 10 do sum...   PREDICT statement_list' -> ; statement statement_list'
+178    $ . end statement_list' statement ;      ; for i := 1 to 10 do sum...   MATCH ';'
+179    $ . end statement_list' statement        for i := 1 to 10 do sum :...   PREDICT statement -> for id assignop expression to expression do statement
+180    $ . end statement_list' statement d...   for i := 1 to 10 do sum :...   MATCH 'for'
+181    $ . end statement_list' statement d...   i := 1 to 10 do sum := su...   MATCH 'id'
+182    $ . end statement_list' statement d...   := 1 to 10 do sum := sum ...   MATCH 'assignop'
+183    $ . end statement_list' statement d...   1 to 10 do sum := sum + a...   PREDICT expression -> simple_expression expression_tail
+184    $ . end statement_list' statement d...   1 to 10 do sum := sum + a...   PREDICT simple_expression -> term simple_expression'
+185    $ . end statement_list' statement d...   1 to 10 do sum := sum + a...   PREDICT term -> factor term'
+186    $ . end statement_list' statement d...   1 to 10 do sum := sum + a...   PREDICT factor -> num
+187    $ . end statement_list' statement d...   1 to 10 do sum := sum + a...   MATCH 'num'
+188    $ . end statement_list' statement d...   to 10 do sum := sum + arr...   PREDICT term' -> ε
+189    $ . end statement_list' statement d...   to 10 do sum := sum + arr...   PREDICT simple_expression' -> ε
+190    $ . end statement_list' statement d...   to 10 do sum := sum + arr...   PREDICT expression_tail -> ε
+191    $ . end statement_list' statement d...   to 10 do sum := sum + arr...   MATCH 'to'
+192    $ . end statement_list' statement d...   10 do sum := sum + arr [ ...   PREDICT expression -> simple_expression expression_tail
+193    $ . end statement_list' statement d...   10 do sum := sum + arr [ ...   PREDICT simple_expression -> term simple_expression'
+194    $ . end statement_list' statement d...   10 do sum := sum + arr [ ...   PREDICT term -> factor term'
+195    $ . end statement_list' statement d...   10 do sum := sum + arr [ ...   PREDICT factor -> num
+196    $ . end statement_list' statement d...   10 do sum := sum + arr [ ...   MATCH 'num'
+197    $ . end statement_list' statement d...   do sum := sum + arr [ i ]...   PREDICT term' -> ε
+198    $ . end statement_list' statement d...   do sum := sum + arr [ i ]...   PREDICT simple_expression' -> ε
+199    $ . end statement_list' statement d...   do sum := sum + arr [ i ]...   PREDICT expression_tail -> ε
+200    $ . end statement_list' statement do     do sum := sum + arr [ i ]...   MATCH 'do'
+201    $ . end statement_list' statement        sum := sum + arr [ i ] ; ...   PREDICT statement -> id statement_id_tail
+202    $ . end statement_list' statement_i...   sum := sum + arr [ i ] ; ...   MATCH 'id'
+203    $ . end statement_list' statement_i...   := sum + arr [ i ] ; writ...   PREDICT statement_id_tail -> assignop expression
+204    $ . end statement_list' expression ...   := sum + arr [ i ] ; writ...   MATCH 'assignop'
+205    $ . end statement_list' expression       sum + arr [ i ] ; write (...   PREDICT expression -> simple_expression expression_tail
+206    $ . end statement_list' expression_...   sum + arr [ i ] ; write (...   PREDICT simple_expression -> term simple_expression'
+207    $ . end statement_list' expression_...   sum + arr [ i ] ; write (...   PREDICT term -> factor term'
+208    $ . end statement_list' expression_...   sum + arr [ i ] ; write (...   PREDICT factor -> id factor_id_tail
+209    $ . end statement_list' expression_...   sum + arr [ i ] ; write (...   MATCH 'id'
+210    $ . end statement_list' expression_...   + arr [ i ] ; write ( sum...   PREDICT factor_id_tail -> ε
+211    $ . end statement_list' expression_...   + arr [ i ] ; write ( sum...   PREDICT term' -> ε
+212    $ . end statement_list' expression_...   + arr [ i ] ; write ( sum...   PREDICT simple_expression' -> addop term simple_expression'
+213    $ . end statement_list' expression_...   + arr [ i ] ; write ( sum...   MATCH 'addop'
+214    $ . end statement_list' expression_...   arr [ i ] ; write ( sum )...   PREDICT term -> factor term'
+215    $ . end statement_list' expression_...   arr [ i ] ; write ( sum )...   PREDICT factor -> id factor_id_tail
+216    $ . end statement_list' expression_...   arr [ i ] ; write ( sum )...   MATCH 'id'
+217    $ . end statement_list' expression_...   [ i ] ; write ( sum ) end...   PREDICT factor_id_tail -> [ expression_list ]
+218    $ . end statement_list' expression_...   [ i ] ; write ( sum ) end...   MATCH '['
+219    $ . end statement_list' expression_...   i ] ; write ( sum ) end ....   PREDICT expression_list -> expression expression_list'
+220    $ . end statement_list' expression_...   i ] ; write ( sum ) end ....   PREDICT expression -> simple_expression expression_tail
+221    $ . end statement_list' expression_...   i ] ; write ( sum ) end ....   PREDICT simple_expression -> term simple_expression'
+222    $ . end statement_list' expression_...   i ] ; write ( sum ) end ....   PREDICT term -> factor term'
+223    $ . end statement_list' expression_...   i ] ; write ( sum ) end ....   PREDICT factor -> id factor_id_tail
+224    $ . end statement_list' expression_...   i ] ; write ( sum ) end ....   MATCH 'id'
+225    $ . end statement_list' expression_...   ] ; write ( sum ) end . EOF    PREDICT factor_id_tail -> ε
+226    $ . end statement_list' expression_...   ] ; write ( sum ) end . EOF    PREDICT term' -> ε
+227    $ . end statement_list' expression_...   ] ; write ( sum ) end . EOF    PREDICT simple_expression' -> ε
+228    $ . end statement_list' expression_...   ] ; write ( sum ) end . EOF    PREDICT expression_tail -> ε
+229    $ . end statement_list' expression_...   ] ; write ( sum ) end . EOF    PREDICT expression_list' -> ε
+230    $ . end statement_list' expression_...   ] ; write ( sum ) end . EOF    MATCH ']'
+231    $ . end statement_list' expression_...   ; write ( sum ) end . EOF      PREDICT term' -> ε
+232    $ . end statement_list' expression_...   ; write ( sum ) end . EOF      PREDICT simple_expression' -> ε
+233    $ . end statement_list' expression_...   ; write ( sum ) end . EOF      PREDICT expression_tail -> ε
+234    $ . end statement_list'                  ; write ( sum ) end . EOF      PREDICT statement_list' -> ; statement statement_list'
+235    $ . end statement_list' statement ;      ; write ( sum ) end . EOF      MATCH ';'
+236    $ . end statement_list' statement        write ( sum ) end . EOF        PREDICT statement -> write ( expression_list )
+237    $ . end statement_list' ) expressio...   write ( sum ) end . EOF        MATCH 'write'
+238    $ . end statement_list' ) expressio...   ( sum ) end . EOF              MATCH '('
+239    $ . end statement_list' ) expressio...   sum ) end . EOF                PREDICT expression_list -> expression expression_list'
+240    $ . end statement_list' ) expressio...   sum ) end . EOF                PREDICT expression -> simple_expression expression_tail
+241    $ . end statement_list' ) expressio...   sum ) end . EOF                PREDICT simple_expression -> term simple_expression'
+242    $ . end statement_list' ) expressio...   sum ) end . EOF                PREDICT term -> factor term'
+243    $ . end statement_list' ) expressio...   sum ) end . EOF                PREDICT factor -> id factor_id_tail
+244    $ . end statement_list' ) expressio...   sum ) end . EOF                MATCH 'id'
+245    $ . end statement_list' ) expressio...   ) end . EOF                    PREDICT factor_id_tail -> ε
+246    $ . end statement_list' ) expressio...   ) end . EOF                    PREDICT term' -> ε
+247    $ . end statement_list' ) expressio...   ) end . EOF                    PREDICT simple_expression' -> ε
+248    $ . end statement_list' ) expressio...   ) end . EOF                    PREDICT expression_tail -> ε
+249    $ . end statement_list' ) expressio...   ) end . EOF                    PREDICT expression_list' -> ε
+250    $ . end statement_list' )                ) end . EOF                    MATCH ')'
+251    $ . end statement_list'                  end . EOF                      PREDICT statement_list' -> ε
+252    $ . end                                  end . EOF                      MATCH 'end'
+253    $ .                                      . EOF                          MATCH '.'
+254    $                                        EOF                            ACCEPT
+------------------------------------------------------------

@@ -1,0 +1,30 @@
+# Intentionally malformed program to test error detection
+# program test(input,output);
+# var x : integer;
+# begin
+#   x := ;          <-- missing expression
+#   if x then       <-- missing 'then' condition ok, but missing statement body
+# end.
+PROGRAM program 1 1
+ID test 1 9
+LPAREN ( 1 13
+ID input 1 14
+COMMA , 1 19
+ID output 1 21
+RPAREN ) 1 27
+SEMICOLON ; 1 28
+VAR var 2 1
+ID x 2 5
+COLON : 2 7
+INTEGER integer 2 9
+SEMICOLON ; 2 16
+BEGIN begin 3 1
+ID x 4 3
+ASSIGN := 4 5
+SEMICOLON ; 4 8
+IF if 5 3
+ID x 5 6
+THEN then 5 8
+END end 6 1
+DOT . 6 4
+EOF EOF 7 1
