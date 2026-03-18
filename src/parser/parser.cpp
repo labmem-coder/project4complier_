@@ -183,12 +183,9 @@ std::string Parser::mapTokenToGrammarTerminal(const Token& tok) const {
             return "relop";
         case TokenType::PLUS:
         case TokenType::MINUS:
-<<<<<<< HEAD
             // Context-sensitive: in factor context '-' is uminus, elsewhere addop
             // The parse table will determine via stack top which applies.
             return "addop";
-=======
->>>>>>> dbfc27feaef9e504a69605d7b00e00f710e62744
         case TokenType::OR_KW:
             return "addop";
         case TokenType::MULTIPLY:
