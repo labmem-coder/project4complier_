@@ -172,7 +172,17 @@ int main(int argc, char* argv[]) {
     parser.printParseProcess(std::cout);
 
     if (success) {
+        {
+            std::ofstream astOut("ast.txt");
+            printAST(parser.getASTRoot(), astOut);
+        }
+
         std::cout << "\n*** PARSE SUCCESSFUL ***\n";
+        std::cout << "\n=== AST ===\n";
+        printAST(parser.getASTRoot(), std::cout);
+        if (printAll) {
+            std::cout << "AST written to ast.txt\n";
+        }
     } else {
         std::cout << "\n*** PARSE FAILED with " << parser.getErrors().size() << " error(s): ***\n";
         for (auto& err : parser.getErrors()) {

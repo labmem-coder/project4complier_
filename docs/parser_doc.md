@@ -1,221 +1,152 @@
-# Pascal-S LL(1) 语法分析器文档
+# Pascal-S LL(1) Parser 文档
 
-## 1. 编译命令
+## 1. 构建与运行
 
 ### 环境要求
-- C++17 兼容编译器（g++ 7+ 或 MSVC 2017+）
-- Make 工具（可选，也可直接使用 g++ 命令）
+- C++17 编译器
+- Windows 下可直接使用 `g++`
+- `make` 可选
 
-### 编译方式
+### 编译
 
-**使用 Make：**
 ```bash
 cd src/parser
-make
+g++ -std=c++17 -Wall -Wextra -O2 main.cpp grammar.cpp parser.cpp -o pascal_parser
 ```
 
-**直接编译（Windows/Linux 通用）：**
-```bash
-cd src/parser
-g++ -std=c++17 -Wall -O2 -o pascal_parser main.cpp grammar.cpp parser.cpp
-```
-
-### 运行方式
+### 运行
 
 ```bash
-# 解析 token 文件
 ./pascal_parser <token_file>
-
-# 打印 LL(1) 文法
 ./pascal_parser --grammar
-
-# 打印 FIRST/FOLLOW 集
 ./pascal_parser --first-follow
-
-# 打印预测分析表
 ./pascal_parser --table
-
-# 全部输出 + 解析（输出文法、FIRST/FOLLOW、分析表、分析过程到文件）
 ./pascal_parser --all <token_file>
 ```
 
-`--all` 模式会生成以下文件：
-- `ll1_grammar.txt` — 消除左递归/左公因子后的 LL(1) 文法
-- `first_follow.txt` — 所有非终结符的 FIRST 集和 FOLLOW 集
-- `parse_table.txt` — LL(1) 预测分析表
-- `parse_process.txt` — 语法分析过程日志
+`--all` 模式会输出：
+- `ll1_grammar.txt`
+- `first_follow.txt`
+- `parse_table.txt`
+- `parse_process.txt`
+- `ast.txt`
 
-### 运行测试
+## 2. 输入格式
 
-```bash
-cd src/parser
-make test
-```
+Token 文件每行一个 token，格式如下：
 
----
-
-## 2. 词法分析输出 Token 定义
-
-输入文件格式为每行一个 token，格式：
-```
+```text
 TOKEN_TYPE lexeme line column
 ```
 
-### Token 类型定义表
+例如：
 
-| Token名 | 含义 | 示例 lexeme |
-|---------|------|------------|
-| **关键字** | | |
-| PROGRAM | program 关键字 | program |
-| VAR | var 关键字 | var |
-| CONST | const 关键字 | const |
-| PROCEDURE | procedure 关键字 | procedure |
-| FUNCTION | function 关键字 | function |
-| BEGIN | begin 关键字 | begin |
-| END | end 关键字 | end |
-| IF | if 关键字 | if |
-| THEN | then 关键字 | then |
-| ELSE | else 关键字 | else |
-| FOR | for 关键字 | for |
-| TO | to 关键字 | to |
-| DO | do 关键字 | do |
-| READ | read 关键字 | read |
-| WRITE | write 关键字 | write |
-| INTEGER | integer 类型关键字 | integer |
-| REAL | real 类型关键字 | real |
-| BOOLEAN | boolean 类型关键字 | boolean |
-| CHAR | char 类型关键字 | char |
-| ARRAY | array 关键字 | array |
-| OF | of 关键字 | of |
-| NOT | not 关键字 | not |
-| DIV | div 整除运算符 | div |
-| MOD | mod 取模运算符 | mod |
-| AND | and 逻辑与 | and |
-| OR | or 逻辑或 | or |
-| **运算符** | | |
-| ASSIGN | 赋值运算符 | := |
-| PLUS | 加号 | + |
-| MINUS | 减号 | - |
-| MULTIPLY | 乘号 | * |
-| DIVIDE | 除号 | / |
-| EQ | 等于 | = |
-| NE | 不等于 | <> |
-| LT | 小于 | < |
-| LE | 小于等于 | <= |
-| GT | 大于 | > |
-| GE | 大于等于 | >= |
-| **界符** | | |
-| LPAREN | 左圆括号 | ( |
-| RPAREN | 右圆括号 | ) |
-| LBRACKET | 左方括号 | [ |
-| RBRACKET | 右方括号 | ] |
-| SEMICOLON | 分号 | ; |
-| COLON | 冒号 | : |
-| COMMA | 逗号 | , |
-| DOT | 句点 | . |
-| DOTDOT | 范围符 | .. |
-| **字面量** | | |
-| NUM | 数字字面量 | 42, 3.14 |
-| LETTER | 字符字面量 | a |
-| ID | 标识符 | myVar |
-| **特殊** | | |
-| EOF / END_OF_FILE | 文件结束 | EOF |
-
-### Token 到文法终结符的映射
-
-| Token 类型 | 文法终结符 |
-|-----------|-----------|
-| EQ, NE, LT, LE, GT, GE | relop |
-| PLUS, MINUS, OR | addop |
-| MULTIPLY, DIVIDE, DIV, MOD, AND | mulop |
-| ASSIGN | assignop |
-| 其他 | 与关键字/界符名一致 |
-
-> 注意：`-`（MINUS）在 `factor` 产生式中作为一元负号直接匹配 `-`，在 `simple_expression'` 中作为 `addop` 匹配。解析器通过栈顶符号自动区分。
-
----
-
-## 3. 设计思路
-
-### 3.1 整体架构
-
-```
-token文件 → [Token读取器] → token序列 → [LL(1)分析器] → 分析结果
-                                            ↑
-                              [文法构建] → [左递归/左公因子消除]
-                                            ↓
-                              [FIRST/FOLLOW计算] → [预测分析表]
+```text
+PROGRAM program 1 1
+ID test 1 9
+SEMICOLON ; 1 13
 ```
 
-### 3.2 文法变换
+## 3. 解析器结构
 
-原始 Pascal-S 文法存在以下 LL(1) 不兼容问题：
+当前实现流程：
 
-1. **左递归**：`idlist`, `const_declaration`, `var_declaration`, `parameter_list`, `statement_list`, `expression_list`, `variable_list`, `simple_expression`, `term`, `period` 等产生式含有直接左递归。
-2. **左公因子**：`statement` 中 `variable assignop expression`、`func_id assignop expression`、`procedure_call` 均以 `id` 开头；`factor` 中 `variable` 和 `id(expression_list)` 均以 `id` 开头。
+1. 构建 Pascal-S 文法
+2. 执行左因子提取与左递归消除
+3. 计算 FIRST / FOLLOW 集
+4. 生成 LL(1) 预测分析表
+5. 基于预测分析表进行表驱动语法分析
+6. 在语法分析过程中同步构建 AST
 
-**消除策略：**
+对应源码：
+- `src/parser/grammar.h/.cpp`：文法、FIRST/FOLLOW、预测分析表
+- `src/parser/parser.h/.cpp`：表驱动分析器与 AST 语义动作
+- `src/parser/ast.h`：AST 节点体系
+- `src/parser/main.cpp`：命令行入口与结果输出
 
-- **左递归消除**：对形如 `A → Aα | β` 的产生式，引入 `A'`：
-  - `A → β A'`
-  - `A' → α A' | ε`
+## 4. AST 构建机制
 
-- **左公因子提取**：对形如 `A → αβ₁ | αβ₂` 的产生式，引入 `A'`：
-  - `A → α A'`
-  - `A' → β₁ | β₂`
+AST 构建严格绑定在 LL(1) 预测分析流程中，没有绕过预测分析表。
 
-代码中 `Grammar::eliminateLeftRecursion()` 和 `Grammar::eliminateLeftFactoring()` 实现了通用算法。但因 Pascal-S 文法的 `statement` 和 `factor` 中 id 前缀的歧义较为复杂，在 `buildPascalSGrammar()` 中进行了**手动预变换**（引入 `statement_id_tail` 和 `factor_id_tail`），然后再运行自动变换处理剩余情况。
+实现方式：
 
-### 3.3 FIRST/FOLLOW 集计算
+1. 分析栈仍然按原有方式由预测分析表驱动
+2. 当某条产生式被选中时，解析器除了压入 RHS 之外，还会压入一个内部语义动作标记
+3. 当 RHS 完成匹配后，动作标记触发规约
+4. 规约时从语义栈弹出该产生式对应的语义值，拼装父节点，再压回语义栈
+5. 最终在 `programstruct` 规约完成时得到 AST 根节点
 
-标准不动点算法：
-- **FIRST(X)**：若 X 是终结符则 FIRST(X)={X}；若 X→ε 则加入 ε；若 X→Y₁Y₂...Yₙ 则依次加入 FIRST(Yᵢ)-{ε}，若所有 Yᵢ 都能推导出 ε 则加入 ε。
-- **FOLLOW(S)**：初始加入 $。对 A→αBβ，将 FIRST(β)-{ε} 加入 FOLLOW(B)；若 β⇒*ε 则将 FOLLOW(A) 加入 FOLLOW(B)。
+这套机制的关键点：
+- 语法判断仍完全依赖 `parseTable`
+- AST 构建只发生在 `PREDICT -> MATCH -> REDUCE` 这条链路中
+- 终结符匹配时会把 token 放入语义栈
+- 非终结符规约时会把 token、子表达式、语句、声明等合并为更高层节点
 
-### 3.4 预测分析表构造
+## 5. 当前 AST 支持范围
 
-对每个产生式 `A → α`：
-- 对 FIRST(α) 中每个终结符 a ≠ ε，令 M[A, a] = 该产生式
-- 若 ε ∈ FIRST(α)，则对 FOLLOW(A) 中每个终结符 b，令 M[A, b] = 该产生式
-- 若存在冲突（同一格有多个产生式），报告 LL(1) 冲突警告
+### 已完整支持
+- 程序结构：`programstruct`、`program_head`、`program_body`
+- 声明：`const_declarations`、`var_declarations`
+- 语句：`compound_statement`、赋值、过程调用、`if`、`for`、`read`、`write`
+- 表达式：关系表达式、加法表达式、乘法表达式、一元 `not`、一元负号
+- 因子：字面量、变量、数组下标、函数调用、括号表达式
+- 辅助列表：`idlist`、`expression_list`、`variable_list`
 
-### 3.5 LL(1) 分析过程
+### 当前先保留占位/未细化
+- `subprogram`
+- `subprogram_head`
+- `formal_parameter`
+- `parameter_list`
+- `parameter`
+- `var_parameter`
+- `value_parameter`
 
-使用经典的**表驱动预测分析**：
-1. 初始化栈：`$ S`（S 为开始符号）
-2. 循环：
-   - 栈顶为终结符：与输入匹配则弹出并前进，否则报错
-   - 栈顶为非终结符：查表得到产生式，弹出栈顶，将产生式右部逆序压栈
-   - 栈顶为 $ 且输入为 $：接受
-3. 记录每一步的栈状态、剩余输入和执行动作
+这些部分仍参与语法分析，但 AST 细节尚未完全展开，当前实现重点是先验证“预测分析表 + 语义栈 + AST 规约”这条架构可行。
 
-### 3.6 错误检测与恢复
+## 6. 主要 AST 节点
 
-采用 **Panic Mode** 错误恢复：
-- 当分析表无匹配条目时，报告错误并给出期望的终结符集合
-- 若当前输入在 FOLLOW(栈顶非终结符) 中，弹出该非终结符（假设其推导为 ε）
-- 否则跳过输入 token 直到找到 FIRST 或 FOLLOW 中的 token
-- 终结符不匹配时弹出期望的终结符继续分析
+定义位于 `src/parser/ast.h`，核心节点包括：
 
-### 3.7 文件结构
+- `ProgramNode`
+- `BlockNode`
+- `ConstDeclNode`
+- `VarDeclNode`
+- `CompoundStmtNode`
+- `AssignStmtNode`
+- `CallStmtNode`
+- `IfStmtNode`
+- `ForStmtNode`
+- `ReadStmtNode`
+- `WriteStmtNode`
+- `VariableExprNode`
+- `LiteralExprNode`
+- `UnaryExprNode`
+- `BinaryExprNode`
+- `CallExprNode`
 
-```
-project_/
-├── docs/
-│   ├── grammar.md              # 原始文法
-│   ├── expected_input_example.md # token 输入示例
-│   └── parser_doc.md           # 本文档
-├── src/parser/
-│   ├── token.h                 # Token 类型定义与映射
-│   ├── grammar.h/.cpp          # 文法表示、变换、FIRST/FOLLOW、分析表
-│   ├── parser.h/.cpp           # LL(1) 分析器、token读取、错误恢复
-│   ├── main.cpp                # 主程序入口
-│   └── Makefile                # 构建脚本
-└── tests/
-    ├── test_simple.tok         # 最简程序
-    ├── test_vars.tok           # 变量声明与表达式
-    ├── test_control.tok        # 控制流 (if/for)
-    ├── test_subprogram.tok     # 子程序 (function)
-    ├── test_error.tok          # 错误检测
-    └── test_complex.tok        # 复杂程序 (数组、过程、循环)
-```
+## 7. 输出说明
+
+解析成功时：
+- 标准输出打印分析过程
+- 标准输出打印 AST
+- `ast.txt` 保存 AST 文本结构
+
+解析失败时：
+- 保留分析过程日志
+- 输出错误数量与位置信息
+- 错误恢复仍采用 panic mode
+
+## 8. 已验证用例
+
+已用以下样例验证当前实现：
+
+- `tests/test_simple.tok`
+- `tests/test_vars.tok`
+- `tests/test_control.tok`
+- `tests/test_subprogram.tok`
+- `tests/test_complex.tok`
+- `tests/test_error.tok`
+
+验证结果：
+- 正确样例可以完成语法分析并输出 AST
+- 错误样例仍能正常报错，不影响原有 LL(1) 分析逻辑

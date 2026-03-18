@@ -1,0 +1,33 @@
+Program(name=test)
+  Parameters:
+    input
+    output
+  Block
+    Block
+      ConstDecls[1]
+        ConstDecl(name=PI)
+          Value
+            LiteralExpr(type=num, value=3)
+      VarDecls[2]
+        VarDecl(type=integer)
+          x
+          y
+        VarDecl(type=real)
+          z
+      SubprogramDecls[0]
+      Body
+        CompoundStmt[2]
+          AssignStmt
+            Target
+              VariableExpr(name=x)
+            Value
+              LiteralExpr(type=num, value=10)
+          AssignStmt
+            Target
+              VariableExpr(name=y)
+            Value
+              BinaryExpr(op=+)
+                Left
+                  VariableExpr(name=x)
+                Right
+                  LiteralExpr(type=num, value=5)
