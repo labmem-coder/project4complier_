@@ -1,33 +1,45 @@
-Program(name=test)
+Program(name=example)
   Parameters:
     input
     output
   Block
     Block
       ConstDecls[1]
-        ConstDecl(name=PI)
+        ConstDecl(name=MAX)
           Value
-            LiteralExpr(type=num, value=3)
+            LiteralExpr(type=num, value=100)
       VarDecls[2]
+        VarDecl(type=array[1..10] of integer)
+          arr
         VarDecl(type=integer)
-          x
-          y
-        VarDecl(type=real)
-          z
+          i
+          sum
       SubprogramDecls[0]
       Body
-        CompoundStmt[2]
+        CompoundStmt[4]
+          CallStmt(name=init)
+            LiteralExpr(type=num, value=10)
           AssignStmt
             Target
-              VariableExpr(name=x)
+              VariableExpr(name=sum)
             Value
+              LiteralExpr(type=num, value=0)
+          ForStmt(iterator=i)
+            Start
+              LiteralExpr(type=num, value=1)
+            End
               LiteralExpr(type=num, value=10)
-          AssignStmt
-            Target
-              VariableExpr(name=y)
-            Value
-              BinaryExpr(op=+)
-                Left
-                  VariableExpr(name=x)
-                Right
-                  LiteralExpr(type=num, value=5)
+            Body
+              AssignStmt
+                Target
+                  VariableExpr(name=sum)
+                Value
+                  BinaryExpr(op=+)
+                    Left
+                      VariableExpr(name=sum)
+                    Right
+                      VariableExpr(name=arr)
+                        Index
+                          VariableExpr(name=i)
+          WriteStmt
+            VariableExpr(name=sum)
