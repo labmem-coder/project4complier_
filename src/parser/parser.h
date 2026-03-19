@@ -2,12 +2,12 @@
 #define PARSER_H
 
 #include "token.h"
+#include "lexer.h"
 #include "grammar.h"
 #include "ast.h"
 #include <vector>
 #include <string>
 #include <stack>
-#include <fstream>
 #include <variant>
 
 struct ParseError {
@@ -59,16 +59,25 @@ using SemanticValue = std::variant<
 
 class Parser {
 public:
+    // Construct from Pascal-S source code (lexes internally)
+    Parser(Grammar& grammar, const std::string& source);
+
+    // Construct from pre-lexed token stream
     Parser(Grammar& grammar, const std::vector<Token>& tokens);
 
     bool parse();
+
     const std::vector<ParseError>& getErrors() const { return errors; }
+    const std::vector<LexerError>& getLexerErrors() const { return lexerErrors; }
+    bool hasLexerErrors() const { return !lexerErrors.empty(); }
+    const std::vector<Token>& getTokens() const { return tokens; }
     void printParseProcess(std::ostream& os) const;
     ProgramNodePtr getASTRoot() const { return astRoot; }
 
 private:
     Grammar& grammar;
     std::vector<Token> tokens;
+    std::vector<LexerError> lexerErrors;
     size_t pos;
     std::vector<ParseError> errors;
     ProgramNodePtr astRoot;
@@ -99,8 +108,5 @@ private:
     SemanticValue buildSemanticValue(const Production& production,
                                      const std::vector<SemanticValue>& rhsValues);
 };
-
-// Read tokens from a file in the format: TOKEN_TYPE lexeme line column
-std::vector<Token> readTokensFromFile(const std::string& filename);
 
 #endif

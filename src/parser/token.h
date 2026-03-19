@@ -1,6 +1,7 @@
 #ifndef TOKEN_H
 #define TOKEN_H
 
+#include <iostream>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -133,11 +134,46 @@ inline std::string tokenTypeToTerminal(TokenType t) {
     return "UNKNOWN";
 }
 
-// Read tokens from lexer output file
-inline std::vector<Token> readTokens(const std::string& filename) {
-    std::vector<Token> tokens;
-    // implemented in token_reader.cpp
-    return tokens;
+inline std::ostream& operator<<(std::ostream& os, TokenType t) {
+    return os << static_cast<int>(t);
+}
+
+// Map TokenType to its display name string (e.g. PROGRAM, ID, NUM, ...)
+inline std::string tokenTypeToString(TokenType t) {
+    static const std::unordered_map<TokenType, std::string> m = {
+        {TokenType::PROGRAM, "PROGRAM"}, {TokenType::VAR, "VAR"},
+        {TokenType::CONST, "CONST"}, {TokenType::PROCEDURE, "PROCEDURE"},
+        {TokenType::FUNCTION, "FUNCTION"}, {TokenType::BEGIN, "BEGIN"},
+        {TokenType::END, "END"}, {TokenType::IF, "IF"},
+        {TokenType::THEN, "THEN"}, {TokenType::ELSE, "ELSE"},
+        {TokenType::FOR, "FOR"}, {TokenType::TO, "TO"},
+        {TokenType::DO, "DO"}, {TokenType::READ, "READ"},
+        {TokenType::WRITE, "WRITE"}, {TokenType::WHILE, "WHILE"},
+        {TokenType::REPEAT, "REPEAT"}, {TokenType::UNTIL, "UNTIL"},
+        {TokenType::INTEGER_KW, "INTEGER"}, {TokenType::REAL_KW, "REAL"},
+        {TokenType::BOOLEAN_KW, "BOOLEAN"}, {TokenType::CHAR_KW, "CHAR"},
+        {TokenType::ARRAY, "ARRAY"}, {TokenType::OF, "OF"},
+        {TokenType::NOT, "NOT"},
+        {TokenType::ASSIGN, "ASSIGN"}, {TokenType::PLUS, "PLUS"},
+        {TokenType::MINUS, "MINUS"}, {TokenType::MULTIPLY, "MULTIPLY"},
+        {TokenType::DIVIDE, "DIVIDE"}, {TokenType::DIV_KW, "DIV"},
+        {TokenType::MOD, "MOD"}, {TokenType::AND_KW, "AND"},
+        {TokenType::OR_KW, "OR"},
+        {TokenType::EQ, "EQ"}, {TokenType::NE, "NE"},
+        {TokenType::LT, "LT"}, {TokenType::LE, "LE"},
+        {TokenType::GT, "GT"}, {TokenType::GE, "GE"},
+        {TokenType::LPAREN, "LPAREN"}, {TokenType::RPAREN, "RPAREN"},
+        {TokenType::LBRACKET, "LBRACKET"}, {TokenType::RBRACKET, "RBRACKET"},
+        {TokenType::SEMICOLON, "SEMICOLON"}, {TokenType::COLON, "COLON"},
+        {TokenType::COMMA, "COMMA"}, {TokenType::DOT, "DOT"},
+        {TokenType::DOTDOT, "DOTDOT"},
+        {TokenType::NUM, "NUM"}, {TokenType::LETTER, "LETTER"},
+        {TokenType::ID, "ID"},
+        {TokenType::END_OF_FILE, "EOF"}
+    };
+    auto it = m.find(t);
+    if (it != m.end()) return it->second;
+    return "UNKNOWN";
 }
 
 #endif // TOKEN_H

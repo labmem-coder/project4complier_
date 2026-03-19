@@ -1,9 +1,7 @@
 #include "parser.h"
 #include <algorithm>
-#include <cassert>
 #include <cstdio>
 #include <iostream>
-#include <sstream>
 
 namespace {
 
@@ -137,36 +135,13 @@ std::string typeNameFromBasic(const SemanticValue& value) {
 
 } // namespace
 
-std::vector<Token> readTokensFromFile(const std::string& filename) {
-    std::vector<Token> tokens;
-    std::ifstream fin(filename);
-    if (!fin.is_open()) {
-        std::cerr << "Error: cannot open token file: " << filename << "\n";
-        return tokens;
+Parser::Parser(Grammar& grammar, const std::string& source)
+    : grammar(grammar), pos(0), astRoot(nullptr) {
+    Lexer lexer(source);
+    tokens = lexer.tokenize();
+    if (lexer.hasErrors()) {
+        lexerErrors = lexer.getErrors();
     }
-
-    auto nameMap = buildTokenNameMap();
-    std::string line;
-    while (std::getline(fin, line)) {
-        if (line.empty() || line[0] == '#') continue;
-
-        std::istringstream iss(line);
-        std::string typeName;
-        std::string lexeme;
-        int ln = 0;
-        int col = 0;
-        if (!(iss >> typeName >> lexeme >> ln >> col)) continue;
-
-        auto it = nameMap.find(typeName);
-        if (it == nameMap.end()) {
-            std::cerr << "Warning: unknown token type '" << typeName << "', skipping.\n";
-            continue;
-        }
-
-        tokens.push_back({it->second, lexeme, ln, col});
-    }
-
-    return tokens;
 }
 
 Parser::Parser(Grammar& grammar, const std::vector<Token>& tokens)

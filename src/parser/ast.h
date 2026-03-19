@@ -61,11 +61,15 @@ inline std::string indentString(int indent) {
     return std::string(indent, ' ');
 }
 
+// Forward declaration for visitor pattern (used by semantic analysis / codegen)
+class ASTVisitor;
+
 struct ASTNode {
     ASTNodeKind kind;
     explicit ASTNode(ASTNodeKind kind) : kind(kind) {}
     virtual ~ASTNode() = default;
     virtual void print(std::ostream& os, int indent = 0) const = 0;
+    virtual void accept(ASTVisitor& visitor) = 0;
 };
 
 using ASTNodePtr = std::shared_ptr<ASTNode>;
@@ -96,6 +100,7 @@ struct PlaceholderNode : ASTNode {
     void print(std::ostream& os, int indent = 0) const override {
         os << indentString(indent) << "Placeholder(" << label << ")\n";
     }
+    void accept(ASTVisitor& visitor) override;
 };
 
 struct BlockNode : ASTNode {
@@ -105,6 +110,7 @@ struct BlockNode : ASTNode {
     StmtNodePtr compoundStmt;
 
     BlockNode() : ASTNode(ASTNodeKind::Block) {}
+    void accept(ASTVisitor& visitor) override;
 
     void print(std::ostream& os, int indent = 0) const override {
         os << indentString(indent) << "Block\n";
@@ -140,6 +146,7 @@ struct ProgramNode : ASTNode {
     BlockNodePtr block;
 
     ProgramNode() : ASTNode(ASTNodeKind::Program) {}
+    void accept(ASTVisitor& visitor) override;
 
     void print(std::ostream& os, int indent = 0) const override {
         os << indentString(indent) << "Program(name=" << name << ")\n";
@@ -167,6 +174,7 @@ struct ConstDeclNode : DeclNode {
     ExprNodePtr value;
 
     ConstDeclNode() : DeclNode(ASTNodeKind::ConstDecl) {}
+    void accept(ASTVisitor& visitor) override;
 
     void print(std::ostream& os, int indent = 0) const override {
         os << indentString(indent) << "ConstDecl(name=" << name << ")\n";
@@ -181,6 +189,7 @@ struct VarDeclNode : DeclNode {
     std::string typeName;
 
     VarDeclNode() : DeclNode(ASTNodeKind::VarDecl) {}
+    void accept(ASTVisitor& visitor) override;
 
     void print(std::ostream& os, int indent = 0) const override {
         os << indentString(indent) << "VarDecl(type=" << typeName << ")\n";
@@ -198,6 +207,7 @@ struct SubprogramDeclNode : DeclNode {
     BlockNodePtr body;
 
     SubprogramDeclNode() : DeclNode(ASTNodeKind::SubprogramDecl) {}
+    void accept(ASTVisitor& visitor) override;
 
     void print(std::ostream& os, int indent = 0) const override {
         os << indentString(indent) << "SubprogramDecl(kind=" << headerKind
@@ -222,6 +232,7 @@ struct ParamDeclNode : DeclNode {
     std::string typeName;
 
     ParamDeclNode() : DeclNode(ASTNodeKind::ParamDecl) {}
+    void accept(ASTVisitor& visitor) override;
 
     void print(std::ostream& os, int indent = 0) const override {
         os << indentString(indent) << "ParamDecl(mode="
@@ -237,6 +248,7 @@ struct CompoundStmtNode : StmtNode {
     std::vector<StmtNodePtr> statements;
 
     CompoundStmtNode() : StmtNode(ASTNodeKind::CompoundStmt) {}
+    void accept(ASTVisitor& visitor) override;
 
     void print(std::ostream& os, int indent = 0) const override {
         os << indentString(indent) << "CompoundStmt[" << statements.size() << "]\n";
@@ -249,6 +261,7 @@ struct CompoundStmtNode : StmtNode {
 
 struct EmptyStmtNode : StmtNode {
     EmptyStmtNode() : StmtNode(ASTNodeKind::EmptyStmt) {}
+    void accept(ASTVisitor& visitor) override;
 
     void print(std::ostream& os, int indent = 0) const override {
         os << indentString(indent) << "EmptyStmt\n";
@@ -260,6 +273,7 @@ struct AssignStmtNode : StmtNode {
     ExprNodePtr value;
 
     AssignStmtNode() : StmtNode(ASTNodeKind::AssignStmt) {}
+    void accept(ASTVisitor& visitor) override;
 
     void print(std::ostream& os, int indent = 0) const override {
         os << indentString(indent) << "AssignStmt\n";
@@ -277,6 +291,7 @@ struct CallStmtNode : StmtNode {
     std::vector<ExprNodePtr> arguments;
 
     CallStmtNode() : StmtNode(ASTNodeKind::CallStmt) {}
+    void accept(ASTVisitor& visitor) override;
 
     void print(std::ostream& os, int indent = 0) const override {
         os << indentString(indent) << "CallStmt(name=" << callee << ")\n";
@@ -293,6 +308,7 @@ struct IfStmtNode : StmtNode {
     StmtNodePtr elseStmt;
 
     IfStmtNode() : StmtNode(ASTNodeKind::IfStmt) {}
+    void accept(ASTVisitor& visitor) override;
 
     void print(std::ostream& os, int indent = 0) const override {
         os << indentString(indent) << "IfStmt\n";
@@ -315,6 +331,7 @@ struct ForStmtNode : StmtNode {
     StmtNodePtr body;
 
     ForStmtNode() : StmtNode(ASTNodeKind::ForStmt) {}
+    void accept(ASTVisitor& visitor) override;
 
     void print(std::ostream& os, int indent = 0) const override {
         os << indentString(indent) << "ForStmt(iterator=" << iterator << ")\n";
@@ -334,6 +351,7 @@ struct ReadStmtNode : StmtNode {
     std::vector<ExprNodePtr> variables;
 
     ReadStmtNode() : StmtNode(ASTNodeKind::ReadStmt) {}
+    void accept(ASTVisitor& visitor) override;
 
     void print(std::ostream& os, int indent = 0) const override {
         os << indentString(indent) << "ReadStmt\n";
@@ -348,6 +366,7 @@ struct WriteStmtNode : StmtNode {
     std::vector<ExprNodePtr> expressions;
 
     WriteStmtNode() : StmtNode(ASTNodeKind::WriteStmt) {}
+    void accept(ASTVisitor& visitor) override;
 
     void print(std::ostream& os, int indent = 0) const override {
         os << indentString(indent) << "WriteStmt\n";
@@ -363,6 +382,7 @@ struct VariableExprNode : ExprNode {
     std::vector<ExprNodePtr> indices;
 
     VariableExprNode() : ExprNode(ASTNodeKind::VariableExpr) {}
+    void accept(ASTVisitor& visitor) override;
 
     void print(std::ostream& os, int indent = 0) const override {
         os << indentString(indent) << "VariableExpr(name=" << name << ")\n";
@@ -379,6 +399,7 @@ struct LiteralExprNode : ExprNode {
     std::string literalType;
 
     LiteralExprNode() : ExprNode(ASTNodeKind::LiteralExpr) {}
+    void accept(ASTVisitor& visitor) override;
 
     void print(std::ostream& os, int indent = 0) const override {
         os << indentString(indent) << "LiteralExpr(type=" << literalType
@@ -391,6 +412,7 @@ struct UnaryExprNode : ExprNode {
     ExprNodePtr operand;
 
     UnaryExprNode() : ExprNode(ASTNodeKind::UnaryExpr) {}
+    void accept(ASTVisitor& visitor) override;
 
     void print(std::ostream& os, int indent = 0) const override {
         os << indentString(indent) << "UnaryExpr(op=" << op << ")\n";
@@ -405,6 +427,7 @@ struct BinaryExprNode : ExprNode {
     ExprNodePtr right;
 
     BinaryExprNode() : ExprNode(ASTNodeKind::BinaryExpr) {}
+    void accept(ASTVisitor& visitor) override;
 
     void print(std::ostream& os, int indent = 0) const override {
         os << indentString(indent) << "BinaryExpr(op=" << op << ")\n";
@@ -422,6 +445,7 @@ struct CallExprNode : ExprNode {
     std::vector<ExprNodePtr> arguments;
 
     CallExprNode() : ExprNode(ASTNodeKind::CallExpr) {}
+    void accept(ASTVisitor& visitor) override;
 
     void print(std::ostream& os, int indent = 0) const override {
         os << indentString(indent) << "CallExpr(name=" << callee << ")\n";
@@ -439,5 +463,56 @@ inline void printAST(const ASTNodePtr& node, std::ostream& os, int indent = 0) {
     }
     node->print(os, indent);
 }
+
+// ---------------------------------------------------------------------------
+// ASTVisitor — override the visit methods you need.
+// Extend this for semantic analysis, type checking, C code generation, etc.
+// ---------------------------------------------------------------------------
+class ASTVisitor {
+public:
+    virtual ~ASTVisitor() = default;
+    virtual void visitProgram(ProgramNode& /*node*/) {}
+    virtual void visitBlock(BlockNode& /*node*/) {}
+    virtual void visitConstDecl(ConstDeclNode& /*node*/) {}
+    virtual void visitVarDecl(VarDeclNode& /*node*/) {}
+    virtual void visitSubprogramDecl(SubprogramDeclNode& /*node*/) {}
+    virtual void visitParamDecl(ParamDeclNode& /*node*/) {}
+    virtual void visitCompoundStmt(CompoundStmtNode& /*node*/) {}
+    virtual void visitAssignStmt(AssignStmtNode& /*node*/) {}
+    virtual void visitCallStmt(CallStmtNode& /*node*/) {}
+    virtual void visitIfStmt(IfStmtNode& /*node*/) {}
+    virtual void visitForStmt(ForStmtNode& /*node*/) {}
+    virtual void visitReadStmt(ReadStmtNode& /*node*/) {}
+    virtual void visitWriteStmt(WriteStmtNode& /*node*/) {}
+    virtual void visitEmptyStmt(EmptyStmtNode& /*node*/) {}
+    virtual void visitVariableExpr(VariableExprNode& /*node*/) {}
+    virtual void visitLiteralExpr(LiteralExprNode& /*node*/) {}
+    virtual void visitUnaryExpr(UnaryExprNode& /*node*/) {}
+    virtual void visitBinaryExpr(BinaryExprNode& /*node*/) {}
+    virtual void visitCallExpr(CallExprNode& /*node*/) {}
+    virtual void visitPlaceholder(PlaceholderNode& /*node*/) {}
+};
+
+// accept() implementations
+inline void PlaceholderNode::accept(ASTVisitor& v)    { v.visitPlaceholder(*this); }
+inline void BlockNode::accept(ASTVisitor& v)          { v.visitBlock(*this); }
+inline void ProgramNode::accept(ASTVisitor& v)        { v.visitProgram(*this); }
+inline void ConstDeclNode::accept(ASTVisitor& v)      { v.visitConstDecl(*this); }
+inline void VarDeclNode::accept(ASTVisitor& v)        { v.visitVarDecl(*this); }
+inline void SubprogramDeclNode::accept(ASTVisitor& v) { v.visitSubprogramDecl(*this); }
+inline void ParamDeclNode::accept(ASTVisitor& v)      { v.visitParamDecl(*this); }
+inline void CompoundStmtNode::accept(ASTVisitor& v)   { v.visitCompoundStmt(*this); }
+inline void EmptyStmtNode::accept(ASTVisitor& v)      { v.visitEmptyStmt(*this); }
+inline void AssignStmtNode::accept(ASTVisitor& v)     { v.visitAssignStmt(*this); }
+inline void CallStmtNode::accept(ASTVisitor& v)       { v.visitCallStmt(*this); }
+inline void IfStmtNode::accept(ASTVisitor& v)         { v.visitIfStmt(*this); }
+inline void ForStmtNode::accept(ASTVisitor& v)        { v.visitForStmt(*this); }
+inline void ReadStmtNode::accept(ASTVisitor& v)       { v.visitReadStmt(*this); }
+inline void WriteStmtNode::accept(ASTVisitor& v)      { v.visitWriteStmt(*this); }
+inline void VariableExprNode::accept(ASTVisitor& v)   { v.visitVariableExpr(*this); }
+inline void LiteralExprNode::accept(ASTVisitor& v)    { v.visitLiteralExpr(*this); }
+inline void UnaryExprNode::accept(ASTVisitor& v)      { v.visitUnaryExpr(*this); }
+inline void BinaryExprNode::accept(ASTVisitor& v)     { v.visitBinaryExpr(*this); }
+inline void CallExprNode::accept(ASTVisitor& v)       { v.visitCallExpr(*this); }
 
 #endif
