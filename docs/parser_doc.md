@@ -12,6 +12,7 @@
 ```bash
 cd src/parser
 g++ -std=c++17 -Wall -Wextra -O2 main.cpp grammar.cpp parser.cpp -o pascal_parser
+g++ -std=c++17 -Wall -Wextra -O0 -g main.cpp grammar.cpp parser.cpp -o pascal_parser
 ```
 
 ### 运行
