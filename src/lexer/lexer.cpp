@@ -95,6 +95,50 @@ void Lexer::addError(int errLine, int errCol, const std::string& msg) {
     errors.push_back({errLine, errCol, msg});
 }
 
+void Lexer::pushBracket(char bracket, int bracketLine, int bracketCol) {
+    bracketStack.push_back(bracket);
+    bracketLines.push_back(bracketLine);
+    bracketCols.push_back(bracketCol);
+}
+
+void Lexer::popBracket(char closingBracket, int closingLine, int closingCol) {
+    if (bracketStack.empty()) {
+        addError(closingLine, closingCol,
+                 std::string("Unmatched closing bracket '") + closingBracket + "'");
+        return;
+    }
+
+    const char open = bracketStack.back();
+    const bool matched = (open == '(' && closingBracket == ')') ||
+                         (open == '[' && closingBracket == ']');
+    if (!matched) {
+        addError(closingLine, closingCol,
+                 std::string("Bracket mismatch: '") + open + "' does not match '" +
+                 closingBracket + "'");
+        bracketStack.pop_back();
+        bracketLines.pop_back();
+        bracketCols.pop_back();
+        return;
+    }
+
+    bracketStack.pop_back();
+    bracketLines.pop_back();
+    bracketCols.pop_back();
+}
+
+void Lexer::reportUnclosedBrackets() {
+    while (!bracketStack.empty()) {
+        const char open = bracketStack.back();
+        const int openLine = bracketLines.back();
+        const int openCol = bracketCols.back();
+        addError(openLine, openCol,
+                 std::string("Unclosed opening bracket '") + open + "'");
+        bracketStack.pop_back();
+        bracketLines.pop_back();
+        bracketCols.pop_back();
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Whitespace and comment skipping
 // ---------------------------------------------------------------------------
@@ -161,12 +205,33 @@ void Lexer::scanNumber(int startLine, int startCol) {
     size_t start = pos;
     while (!isAtEnd() && isDigit(peek())) advance();
 
+    // 123abc -> invalid identifier, since identifiers may not start with a digit.
+    if (!isAtEnd() && isAlpha(peek())) {
+        while (!isAtEnd() && isAlphaNumeric(peek())) advance();
+        addError(startLine, startCol,
+                 "Invalid identifier '" + source.substr(start, pos - start) +
+                 "': identifiers cannot start with a digit");
+        return;
+    }
+
     // Check for real number (decimal point not followed by another dot => not '..')
+    bool sawFraction = false;
     if (!isAtEnd() && peek() == '.' && peekNext() != '.') {
         advance(); // consume '.'
+        sawFraction = true;
         if (!isAtEnd() && isDigit(peek())) {
             while (!isAtEnd() && isDigit(peek())) advance();
         }
+    }
+
+    // 1.2.3 -> invalid number with multiple decimal points.
+    if (sawFraction && !isAtEnd() && peek() == '.' && peekNext() != '.') {
+        advance(); // consume the extra '.'
+        while (!isAtEnd() && (isDigit(peek()) || peek() == '.')) advance();
+        addError(startLine, startCol,
+                 "Invalid number format '" + source.substr(start, pos - start) +
+                 "': multiple decimal points");
+        return;
     }
 
     std::string lexeme = source.substr(start, pos - start);
@@ -252,10 +317,22 @@ void Lexer::scanToken() {
         case '*': addToken(TokenType::MULTIPLY,  "*",  startLine, startCol); break;
         case '/': addToken(TokenType::DIVIDE,    "/",  startLine, startCol); break;
         case '=': addToken(TokenType::EQ,        "=",  startLine, startCol); break;
-        case '(': addToken(TokenType::LPAREN,    "(",  startLine, startCol); break;
-        case ')': addToken(TokenType::RPAREN,    ")",  startLine, startCol); break;
-        case '[': addToken(TokenType::LBRACKET,  "[",  startLine, startCol); break;
-        case ']': addToken(TokenType::RBRACKET,  "]",  startLine, startCol); break;
+        case '(':
+            pushBracket('(', startLine, startCol);
+            addToken(TokenType::LPAREN, "(", startLine, startCol);
+            break;
+        case ')':
+            popBracket(')', startLine, startCol);
+            addToken(TokenType::RPAREN, ")", startLine, startCol);
+            break;
+        case '[':
+            pushBracket('[', startLine, startCol);
+            addToken(TokenType::LBRACKET, "[", startLine, startCol);
+            break;
+        case ']':
+            popBracket(']', startLine, startCol);
+            addToken(TokenType::RBRACKET, "]", startLine, startCol);
+            break;
         case ',': addToken(TokenType::COMMA,     ",",  startLine, startCol); break;
         case ';': addToken(TokenType::SEMICOLON, ";",  startLine, startCol); break;
 
@@ -299,8 +376,13 @@ void Lexer::scanToken() {
             break;
 
         default:
-            addError(startLine, startCol,
-                     std::string("Unexpected character '") + c + "'");
+            if (static_cast<unsigned char>(c) >= 128) {
+                addError(startLine, startCol,
+                         "Invalid non-ASCII character encountered");
+            } else {
+                addError(startLine, startCol,
+                         std::string("Unexpected character '") + c + "'");
+            }
             break;
     }
 }
@@ -314,6 +396,9 @@ std::vector<Token> Lexer::tokenize() {
     pos = 0;
     line = 1;
     column = 1;
+    bracketStack.clear();
+    bracketLines.clear();
+    bracketCols.clear();
 
     while (!isAtEnd()) {
         skipWhitespaceAndComments();
@@ -321,6 +406,8 @@ std::vector<Token> Lexer::tokenize() {
             scanToken();
         }
     }
+
+    reportUnclosedBrackets();
 
     // Append EOF token
     addToken(TokenType::END_OF_FILE, "EOF", line, column);

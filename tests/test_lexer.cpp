@@ -1,6 +1,7 @@
 #include "lexer.h"
 #include "token.h"
 #include <cassert>
+#include <fstream>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -229,6 +230,56 @@ static void testUnexpectedCharacter() {
     PASS();
 }
 
+static void testInvalidIdentifierStartingWithDigit() {
+    TEST("Invalid identifier starting with digit");
+    Lexer lexer("var 1a : integer;");
+    lexer.tokenize();
+    EXPECT_TRUE(lexer.hasErrors());
+    EXPECT_EQ(lexer.getErrors()[0].message,
+              std::string("Invalid identifier '1a': identifiers cannot start with a digit"));
+    PASS();
+}
+
+static void testInvalidNumberMultipleDots() {
+    TEST("Invalid number with multiple decimal points");
+    Lexer lexer("x := 1.2.3");
+    lexer.tokenize();
+    EXPECT_TRUE(lexer.hasErrors());
+    EXPECT_EQ(lexer.getErrors()[0].message,
+              std::string("Invalid number format '1.2.3': multiple decimal points"));
+    PASS();
+}
+
+static void testInvalidNonAsciiCharacter() {
+    TEST("Invalid non-ASCII character");
+    Lexer lexer("write（x）;");
+    lexer.tokenize();
+    EXPECT_TRUE(lexer.hasErrors());
+    EXPECT_EQ(lexer.getErrors()[0].message,
+              std::string("Invalid non-ASCII character encountered"));
+    PASS();
+}
+
+static void testBracketMismatch() {
+    TEST("Bracket mismatch error");
+    Lexer lexer("x := (a + b]");
+    lexer.tokenize();
+    EXPECT_TRUE(lexer.hasErrors());
+    EXPECT_EQ(lexer.getErrors()[0].message,
+              std::string("Bracket mismatch: '(' does not match ']'"));
+    PASS();
+}
+
+static void testUnclosedBracket() {
+    TEST("Unclosed bracket error");
+    Lexer lexer("x := (a + b");
+    lexer.tokenize();
+    EXPECT_TRUE(lexer.hasErrors());
+    EXPECT_EQ(lexer.getErrors()[0].message,
+              std::string("Unclosed opening bracket '('"));
+    PASS();
+}
+
 static void testEmptySource() {
     TEST("Empty source");
     auto tokens = tokenizeSource("");
@@ -331,10 +382,50 @@ static void testTokenTypeToString() {
     PASS();
 }
 
+static std::string readFile(const std::string& path) {
+    std::ifstream fin(path);
+    if (!fin.is_open()) return "";
+    std::ostringstream oss;
+    oss << fin.rdbuf();
+    return oss.str();
+}
+
+static int runLexerOnFile(const std::string& path) {
+    const std::string source = readFile(path);
+    if (source.empty()) {
+        std::cerr << "Error: cannot open source file: " << path << "\n";
+        return 1;
+    }
+
+    Lexer lexer(source);
+    const auto tokens = lexer.tokenize();
+
+    if (lexer.hasErrors()) {
+        std::cerr << "*** LEXER ERRORS ***\n";
+        for (const auto& err : lexer.getErrors()) {
+            std::cerr << "  [Line " << err.line << ", Col " << err.column << "] "
+                      << err.message << "\n";
+        }
+        return 1;
+    }
+
+    for (const auto& tok : tokens) {
+        std::cout << tokenTypeToString(tok.type) << " "
+                  << tok.lexeme << " "
+                  << tok.line << " "
+                  << tok.column << "\n";
+    }
+    return 0;
+}
+
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
-int main() {
+int main(int argc, char* argv[]) {
+    if (argc >= 2) {
+        return runLexerOnFile(argv[1]);
+    }
+
     std::cout << "===== Pascal-S Lexer Tests =====\n\n";
 
     testKeywords();
@@ -351,6 +442,11 @@ int main() {
     testLineAndColumn();
     testUnterminatedComment();
     testUnexpectedCharacter();
+    testInvalidIdentifierStartingWithDigit();
+    testInvalidNumberMultipleDots();
+    testInvalidNonAsciiCharacter();
+    testBracketMismatch();
+    testUnclosedBracket();
     testEmptySource();
     testFullProgram();
     testComplexProgram();

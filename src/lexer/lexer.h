@@ -2,9 +2,10 @@
 #define LEXER_H
 
 #include "token.h"
+#include <stack>
 #include <string>
-#include <vector>
 #include <unordered_map>
+#include <vector>
 
 struct LexerError {
     int line;
@@ -43,12 +44,19 @@ private:
     void scanNumber(int startLine, int startCol);
     void scanIdentifierOrKeyword(int startLine, int startCol);
     void scanCharLiteral(int startLine, int startCol);
+    void pushBracket(char bracket, int bracketLine, int bracketCol);
+    void popBracket(char closingBracket, int closingLine, int closingCol);
+    void reportUnclosedBrackets();
 
     static bool isDigit(char c);
     static bool isAlpha(char c);
     static bool isAlphaNumeric(char c);
 
     static const std::unordered_map<std::string, TokenType>& keywordMap();
+
+    std::vector<char> bracketStack;
+    std::vector<int> bracketLines;
+    std::vector<int> bracketCols;
 };
 
 // Convenience: tokenize a Pascal-S source file, returns tokens (with EOF appended)
