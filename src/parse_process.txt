@@ -4,44 +4,153 @@ Parse Process Log
 ------------------------------------------------------------
 Step   Stack                                    Input                          Action
 ------------------------------------------------------------
-1      $ programstruct                          program test ( input , ou...   PREDICT programstruct -> program_head ; program_body .
-2      $ . program_body ; program_head          program test ( input , ou...   PREDICT program_head -> program id program_head'
-3      $ . program_body ; program_head' id...   program test ( input , ou...   MATCH 'program'
-4      $ . program_body ; program_head' id      test ( input , output ) ;...   MATCH 'id'
-5      $ . program_body ; program_head'         ( input , output ) ; begi...   PREDICT program_head' -> ( idlist )
-6      $ . program_body ; ) idlist (            ( input , output ) ; begi...   MATCH '('
-7      $ . program_body ; ) idlist              input , output ) ; begin ...   PREDICT idlist -> id idlist'
-8      $ . program_body ; ) idlist' id          input , output ) ; begin ...   MATCH 'id'
-9      $ . program_body ; ) idlist'             , output ) ; begin end . EOF   PREDICT idlist' -> , id idlist'
-10     $ . program_body ; ) idlist' id ,        , output ) ; begin end . EOF   MATCH ','
-11     $ . program_body ; ) idlist' id          output ) ; begin end . EOF     MATCH 'id'
-12     $ . program_body ; ) idlist'             ) ; begin end . EOF            PREDICT idlist' -> epsilon
-13     $ . program_body ; )                     ) ; begin end . EOF            REDUCE idlist' -> epsilon
-14     $ . program_body ; )                     ) ; begin end . EOF            REDUCE idlist' -> , id idlist'
-15     $ . program_body ; )                     ) ; begin end . EOF            REDUCE idlist -> id idlist'
-16     $ . program_body ; )                     ) ; begin end . EOF            MATCH ')'
-17     $ . program_body ;                       ; begin end . EOF              REDUCE program_head' -> ( idlist )
-18     $ . program_body ;                       ; begin end . EOF              REDUCE program_head -> program id program_head'
-19     $ . program_body ;                       ; begin end . EOF              MATCH ';'
-20     $ . program_body                         begin end . EOF                PREDICT program_body -> const_declarations var_declarations subprogram_declarations compound_statement
-21     $ . compound_statement subprogram_d...   begin end . EOF                PREDICT const_declarations -> epsilon
-22     $ . compound_statement subprogram_d...   begin end . EOF                REDUCE const_declarations -> epsilon
-23     $ . compound_statement subprogram_d...   begin end . EOF                PREDICT var_declarations -> epsilon
-24     $ . compound_statement subprogram_d...   begin end . EOF                REDUCE var_declarations -> epsilon
-25     $ . compound_statement subprogram_d...   begin end . EOF                PREDICT subprogram_declarations -> epsilon
-26     $ . compound_statement                   begin end . EOF                REDUCE subprogram_declarations -> epsilon
-27     $ . compound_statement                   begin end . EOF                PREDICT compound_statement -> begin statement_list end
-28     $ . end statement_list begin             begin end . EOF                MATCH 'begin'
-29     $ . end statement_list                   end . EOF                      PREDICT statement_list -> statement statement_list'
-30     $ . end statement_list' statement        end . EOF                      PREDICT statement -> epsilon
-31     $ . end statement_list'                  end . EOF                      REDUCE statement -> epsilon
-32     $ . end statement_list'                  end . EOF                      PREDICT statement_list' -> epsilon
-33     $ . end                                  end . EOF                      REDUCE statement_list' -> epsilon
-34     $ . end                                  end . EOF                      REDUCE statement_list -> statement statement_list'
-35     $ . end                                  end . EOF                      MATCH 'end'
-36     $ .                                      . EOF                          REDUCE compound_statement -> begin statement_list end
-37     $ .                                      . EOF                          REDUCE program_body -> const_declarations var_declarations subprogram_declarations compound_statement
-38     $ .                                      . EOF                          MATCH '.'
-39     $                                        EOF                            REDUCE programstruct -> program_head ; program_body .
-40     $                                        EOF                            ACCEPT
+1      $ programstruct                          program main ; var a : in...   PREDICT programstruct -> program_head ; program_body .
+2      $ . program_body ; program_head          program main ; var a : in...   PREDICT program_head -> program id program_head'
+3      $ . program_body ; program_head' id...   program main ; var a : in...   MATCH 'program'
+4      $ . program_body ; program_head' id      main ; var a : integer ; ...   MATCH 'id'
+5      $ . program_body ; program_head'         ; var a : integer ; funct...   PREDICT program_head' -> epsilon
+6      $ . program_body ;                       ; var a : integer ; funct...   REDUCE program_head' -> epsilon
+7      $ . program_body ;                       ; var a : integer ; funct...   REDUCE program_head -> program id program_head'
+8      $ . program_body ;                       ; var a : integer ; funct...   MATCH ';'
+9      $ . program_body                         var a : integer ; functio...   PREDICT program_body -> const_declarations var_declarations subprogram_declarations compound_statement
+10     $ . compound_statement subprogram_d...   var a : integer ; functio...   PREDICT const_declarations -> epsilon
+11     $ . compound_statement subprogram_d...   var a : integer ; functio...   REDUCE const_declarations -> epsilon
+12     $ . compound_statement subprogram_d...   var a : integer ; functio...   PREDICT var_declarations -> var var_decl_list
+13     $ . compound_statement subprogram_d...   var a : integer ; functio...   MATCH 'var'
+14     $ . compound_statement subprogram_d...   a : integer ; function de...   PREDICT var_decl_list -> id idlist' : type ; var_decl_list_tail
+15     $ . compound_statement subprogram_d...   a : integer ; function de...   MATCH 'id'
+16     $ . compound_statement subprogram_d...   : integer ; function defn...   PREDICT idlist' -> epsilon
+17     $ . compound_statement subprogram_d...   : integer ; function defn...   REDUCE idlist' -> epsilon
+18     $ . compound_statement subprogram_d...   : integer ; function defn...   MATCH ':'
+19     $ . compound_statement subprogram_d...   integer ; function defn :...   PREDICT type -> basic_type
+20     $ . compound_statement subprogram_d...   integer ; function defn :...   PREDICT basic_type -> integer
+21     $ . compound_statement subprogram_d...   integer ; function defn :...   MATCH 'integer'
+22     $ . compound_statement subprogram_d...   ; function defn : integer...   REDUCE basic_type -> integer
+23     $ . compound_statement subprogram_d...   ; function defn : integer...   REDUCE type -> basic_type
+24     $ . compound_statement subprogram_d...   ; function defn : integer...   MATCH ';'
+25     $ . compound_statement subprogram_d...   function defn : integer ;...   PREDICT var_decl_list_tail -> epsilon
+26     $ . compound_statement subprogram_d...   function defn : integer ;...   REDUCE var_decl_list_tail -> epsilon
+27     $ . compound_statement subprogram_d...   function defn : integer ;...   REDUCE var_decl_list -> id idlist' : type ; var_decl_list_tail
+28     $ . compound_statement subprogram_d...   function defn : integer ;...   REDUCE var_declarations -> var var_decl_list
+29     $ . compound_statement subprogram_d...   function defn : integer ;...   PREDICT subprogram_declarations -> subprogram ; subprogram_declarations
+30     $ . compound_statement subprogram_d...   function defn : integer ;...   PREDICT subprogram -> subprogram_head ; subprogram_body
+31     $ . compound_statement subprogram_d...   function defn : integer ;...   PREDICT subprogram_head -> function id formal_parameter : basic_type
+32     $ . compound_statement subprogram_d...   function defn : integer ;...   MATCH 'function'
+33     $ . compound_statement subprogram_d...   defn : integer ; begin de...   MATCH 'id'
+34     $ . compound_statement subprogram_d...   : integer ; begin defn :=...   PREDICT formal_parameter -> epsilon
+35     $ . compound_statement subprogram_d...   : integer ; begin defn :=...   REDUCE formal_parameter -> epsilon
+36     $ . compound_statement subprogram_d...   : integer ; begin defn :=...   MATCH ':'
+37     $ . compound_statement subprogram_d...   integer ; begin defn := 4...   PREDICT basic_type -> integer
+38     $ . compound_statement subprogram_d...   integer ; begin defn := 4...   MATCH 'integer'
+39     $ . compound_statement subprogram_d...   ; begin defn := 4 ; end ;...   REDUCE basic_type -> integer
+40     $ . compound_statement subprogram_d...   ; begin defn := 4 ; end ;...   REDUCE subprogram_head -> function id formal_parameter : basic_type
+41     $ . compound_statement subprogram_d...   ; begin defn := 4 ; end ;...   MATCH ';'
+42     $ . compound_statement subprogram_d...   begin defn := 4 ; end ; b...   PREDICT subprogram_body -> begin statement_list end
+43     $ . compound_statement subprogram_d...   begin defn := 4 ; end ; b...   MATCH 'begin'
+44     $ . compound_statement subprogram_d...   defn := 4 ; end ; begin a...   PREDICT statement_list -> statement statement_list'
+45     $ . compound_statement subprogram_d...   defn := 4 ; end ; begin a...   PREDICT statement -> id statement_id_tail
+46     $ . compound_statement subprogram_d...   defn := 4 ; end ; begin a...   MATCH 'id'
+47     $ . compound_statement subprogram_d...   := 4 ; end ; begin a := d...   PREDICT statement_id_tail -> assignop expression
+48     $ . compound_statement subprogram_d...   := 4 ; end ; begin a := d...   MATCH 'assignop'
+49     $ . compound_statement subprogram_d...   4 ; end ; begin a := defn...   PREDICT expression -> simple_expression expression_tail
+50     $ . compound_statement subprogram_d...   4 ; end ; begin a := defn...   PREDICT simple_expression -> term simple_expression'
+51     $ . compound_statement subprogram_d...   4 ; end ; begin a := defn...   PREDICT term -> factor term'
+52     $ . compound_statement subprogram_d...   4 ; end ; begin a := defn...   PREDICT factor -> num
+53     $ . compound_statement subprogram_d...   4 ; end ; begin a := defn...   MATCH 'num'
+54     $ . compound_statement subprogram_d...   ; end ; begin a := defn ;...   REDUCE factor -> num
+55     $ . compound_statement subprogram_d...   ; end ; begin a := defn ;...   PREDICT term' -> epsilon
+56     $ . compound_statement subprogram_d...   ; end ; begin a := defn ;...   REDUCE term' -> epsilon
+57     $ . compound_statement subprogram_d...   ; end ; begin a := defn ;...   REDUCE term -> factor term'
+58     $ . compound_statement subprogram_d...   ; end ; begin a := defn ;...   PREDICT simple_expression' -> epsilon
+59     $ . compound_statement subprogram_d...   ; end ; begin a := defn ;...   REDUCE simple_expression' -> epsilon
+60     $ . compound_statement subprogram_d...   ; end ; begin a := defn ;...   REDUCE simple_expression -> term simple_expression'
+61     $ . compound_statement subprogram_d...   ; end ; begin a := defn ;...   PREDICT expression_tail -> epsilon
+62     $ . compound_statement subprogram_d...   ; end ; begin a := defn ;...   REDUCE expression_tail -> epsilon
+63     $ . compound_statement subprogram_d...   ; end ; begin a := defn ;...   REDUCE expression -> simple_expression expression_tail
+64     $ . compound_statement subprogram_d...   ; end ; begin a := defn ;...   REDUCE statement_id_tail -> assignop expression
+65     $ . compound_statement subprogram_d...   ; end ; begin a := defn ;...   REDUCE statement -> id statement_id_tail
+66     $ . compound_statement subprogram_d...   ; end ; begin a := defn ;...   PREDICT statement_list' -> ; statement statement_list'
+67     $ . compound_statement subprogram_d...   ; end ; begin a := defn ;...   MATCH ';'
+68     $ . compound_statement subprogram_d...   end ; begin a := defn ; w...   PREDICT statement -> epsilon
+69     $ . compound_statement subprogram_d...   end ; begin a := defn ; w...   REDUCE statement -> epsilon
+70     $ . compound_statement subprogram_d...   end ; begin a := defn ; w...   PREDICT statement_list' -> epsilon
+71     $ . compound_statement subprogram_d...   end ; begin a := defn ; w...   REDUCE statement_list' -> epsilon
+72     $ . compound_statement subprogram_d...   end ; begin a := defn ; w...   REDUCE statement_list' -> ; statement statement_list'
+73     $ . compound_statement subprogram_d...   end ; begin a := defn ; w...   REDUCE statement_list -> statement statement_list'
+74     $ . compound_statement subprogram_d...   end ; begin a := defn ; w...   MATCH 'end'
+75     $ . compound_statement subprogram_d...   ; begin a := defn ; write...   REDUCE subprogram_body -> begin statement_list end
+76     $ . compound_statement subprogram_d...   ; begin a := defn ; write...   REDUCE subprogram -> subprogram_head ; subprogram_body
+77     $ . compound_statement subprogram_d...   ; begin a := defn ; write...   MATCH ';'
+78     $ . compound_statement subprogram_d...   begin a := defn ; write (...   PREDICT subprogram_declarations -> epsilon
+79     $ . compound_statement                   begin a := defn ; write (...   REDUCE subprogram_declarations -> epsilon
+80     $ . compound_statement                   begin a := defn ; write (...   REDUCE subprogram_declarations -> subprogram ; subprogram_declarations
+81     $ . compound_statement                   begin a := defn ; write (...   PREDICT compound_statement -> begin statement_list end
+82     $ . end statement_list begin             begin a := defn ; write (...   MATCH 'begin'
+83     $ . end statement_list                   a := defn ; write ( a ) ;...   PREDICT statement_list -> statement statement_list'
+84     $ . end statement_list' statement        a := defn ; write ( a ) ;...   PREDICT statement -> id statement_id_tail
+85     $ . end statement_list' statement_i...   a := defn ; write ( a ) ;...   MATCH 'id'
+86     $ . end statement_list' statement_i...   := defn ; write ( a ) ; e...   PREDICT statement_id_tail -> assignop expression
+87     $ . end statement_list' expression ...   := defn ; write ( a ) ; e...   MATCH 'assignop'
+88     $ . end statement_list' expression       defn ; write ( a ) ; end ...   PREDICT expression -> simple_expression expression_tail
+89     $ . end statement_list' expression_...   defn ; write ( a ) ; end ...   PREDICT simple_expression -> term simple_expression'
+90     $ . end statement_list' expression_...   defn ; write ( a ) ; end ...   PREDICT term -> factor term'
+91     $ . end statement_list' expression_...   defn ; write ( a ) ; end ...   PREDICT factor -> id factor_id_tail
+92     $ . end statement_list' expression_...   defn ; write ( a ) ; end ...   MATCH 'id'
+93     $ . end statement_list' expression_...   ; write ( a ) ; end . EOF      PREDICT factor_id_tail -> epsilon
+94     $ . end statement_list' expression_...   ; write ( a ) ; end . EOF      REDUCE factor_id_tail -> epsilon
+95     $ . end statement_list' expression_...   ; write ( a ) ; end . EOF      REDUCE factor -> id factor_id_tail
+96     $ . end statement_list' expression_...   ; write ( a ) ; end . EOF      PREDICT term' -> epsilon
+97     $ . end statement_list' expression_...   ; write ( a ) ; end . EOF      REDUCE term' -> epsilon
+98     $ . end statement_list' expression_...   ; write ( a ) ; end . EOF      REDUCE term -> factor term'
+99     $ . end statement_list' expression_...   ; write ( a ) ; end . EOF      PREDICT simple_expression' -> epsilon
+100    $ . end statement_list' expression_...   ; write ( a ) ; end . EOF      REDUCE simple_expression' -> epsilon
+101    $ . end statement_list' expression_...   ; write ( a ) ; end . EOF      REDUCE simple_expression -> term simple_expression'
+102    $ . end statement_list' expression_...   ; write ( a ) ; end . EOF      PREDICT expression_tail -> epsilon
+103    $ . end statement_list'                  ; write ( a ) ; end . EOF      REDUCE expression_tail -> epsilon
+104    $ . end statement_list'                  ; write ( a ) ; end . EOF      REDUCE expression -> simple_expression expression_tail
+105    $ . end statement_list'                  ; write ( a ) ; end . EOF      REDUCE statement_id_tail -> assignop expression
+106    $ . end statement_list'                  ; write ( a ) ; end . EOF      REDUCE statement -> id statement_id_tail
+107    $ . end statement_list'                  ; write ( a ) ; end . EOF      PREDICT statement_list' -> ; statement statement_list'
+108    $ . end statement_list' statement ;      ; write ( a ) ; end . EOF      MATCH ';'
+109    $ . end statement_list' statement        write ( a ) ; end . EOF        PREDICT statement -> write ( expression_list )
+110    $ . end statement_list' ) expressio...   write ( a ) ; end . EOF        MATCH 'write'
+111    $ . end statement_list' ) expressio...   ( a ) ; end . EOF              MATCH '('
+112    $ . end statement_list' ) expressio...   a ) ; end . EOF                PREDICT expression_list -> expression expression_list'
+113    $ . end statement_list' ) expressio...   a ) ; end . EOF                PREDICT expression -> simple_expression expression_tail
+114    $ . end statement_list' ) expressio...   a ) ; end . EOF                PREDICT simple_expression -> term simple_expression'
+115    $ . end statement_list' ) expressio...   a ) ; end . EOF                PREDICT term -> factor term'
+116    $ . end statement_list' ) expressio...   a ) ; end . EOF                PREDICT factor -> id factor_id_tail
+117    $ . end statement_list' ) expressio...   a ) ; end . EOF                MATCH 'id'
+118    $ . end statement_list' ) expressio...   ) ; end . EOF                  PREDICT factor_id_tail -> epsilon
+119    $ . end statement_list' ) expressio...   ) ; end . EOF                  REDUCE factor_id_tail -> epsilon
+120    $ . end statement_list' ) expressio...   ) ; end . EOF                  REDUCE factor -> id factor_id_tail
+121    $ . end statement_list' ) expressio...   ) ; end . EOF                  PREDICT term' -> epsilon
+122    $ . end statement_list' ) expressio...   ) ; end . EOF                  REDUCE term' -> epsilon
+123    $ . end statement_list' ) expressio...   ) ; end . EOF                  REDUCE term -> factor term'
+124    $ . end statement_list' ) expressio...   ) ; end . EOF                  PREDICT simple_expression' -> epsilon
+125    $ . end statement_list' ) expressio...   ) ; end . EOF                  REDUCE simple_expression' -> epsilon
+126    $ . end statement_list' ) expressio...   ) ; end . EOF                  REDUCE simple_expression -> term simple_expression'
+127    $ . end statement_list' ) expressio...   ) ; end . EOF                  PREDICT expression_tail -> epsilon
+128    $ . end statement_list' ) expressio...   ) ; end . EOF                  REDUCE expression_tail -> epsilon
+129    $ . end statement_list' ) expressio...   ) ; end . EOF                  REDUCE expression -> simple_expression expression_tail
+130    $ . end statement_list' ) expressio...   ) ; end . EOF                  PREDICT expression_list' -> epsilon
+131    $ . end statement_list' )                ) ; end . EOF                  REDUCE expression_list' -> epsilon
+132    $ . end statement_list' )                ) ; end . EOF                  REDUCE expression_list -> expression expression_list'
+133    $ . end statement_list' )                ) ; end . EOF                  MATCH ')'
+134    $ . end statement_list'                  ; end . EOF                    REDUCE statement -> write ( expression_list )
+135    $ . end statement_list'                  ; end . EOF                    PREDICT statement_list' -> ; statement statement_list'
+136    $ . end statement_list' statement ;      ; end . EOF                    MATCH ';'
+137    $ . end statement_list' statement        end . EOF                      PREDICT statement -> epsilon
+138    $ . end statement_list'                  end . EOF                      REDUCE statement -> epsilon
+139    $ . end statement_list'                  end . EOF                      PREDICT statement_list' -> epsilon
+140    $ . end                                  end . EOF                      REDUCE statement_list' -> epsilon
+141    $ . end                                  end . EOF                      REDUCE statement_list' -> ; statement statement_list'
+142    $ . end                                  end . EOF                      REDUCE statement_list' -> ; statement statement_list'
+143    $ . end                                  end . EOF                      REDUCE statement_list -> statement statement_list'
+144    $ . end                                  end . EOF                      MATCH 'end'
+145    $ .                                      . EOF                          REDUCE compound_statement -> begin statement_list end
+146    $ .                                      . EOF                          REDUCE program_body -> const_declarations var_declarations subprogram_declarations compound_statement
+147    $ .                                      . EOF                          MATCH '.'
+148    $                                        EOF                            REDUCE programstruct -> program_head ; program_body .
+149    $                                        EOF                            ACCEPT
 ------------------------------------------------------------

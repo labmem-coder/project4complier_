@@ -193,6 +193,28 @@ static void testExpressions() {
 }
 
 // ---------------------------------------------------------------------------
+// Test: unary minus is accepted at factor start and after binary minus
+// ---------------------------------------------------------------------------
+static void testUnaryMinusExpressions() {
+    TEST("Expressions: unary minus in nested arithmetic");
+    auto r = lexAndParse(
+        "program main;\n"
+        "var a, b, c, d, e: integer;\n"
+        "begin\n"
+        "  a := 5;\n"
+        "  b := 5;\n"
+        "  c := 1;\n"
+        "  d := -2;\n"
+        "  e := (d * 1 div 2) + (a - b) - -(c + 3) mod 2;\n"
+        "  e := ((d mod 2 + 67) + -(a - b) - -((c + 2) mod 2))\n"
+        "end.\n"
+    );
+    EXPECT_TRUE(r.success);
+    EXPECT_TRUE(r.ast != nullptr);
+    PASS();
+}
+
+// ---------------------------------------------------------------------------
 // Test: array access
 // ---------------------------------------------------------------------------
 static void testArrayAccess() {
@@ -352,6 +374,7 @@ int main() {
     testConstAndVarDecl();
     testControlFlow();
     testExpressions();
+    testUnaryMinusExpressions();
     testArrayAccess();
     testSubprogram();
     testComplexProgram();

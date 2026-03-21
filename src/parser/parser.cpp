@@ -157,7 +157,6 @@ std::string Parser::mapTokenToGrammarTerminal(const Token& tok) const {
         case TokenType::GE:
             return "relop";
         case TokenType::PLUS:
-        case TokenType::MINUS:
         case TokenType::OR_KW:
             return "addop";
         case TokenType::MULTIPLY:
@@ -327,18 +326,6 @@ bool Parser::parse() {
             continue;
         }
 
-        std::string lookupTerminal = input;
-        if (top == "factor" && tok.type == TokenType::MINUS) lookupTerminal = "-";
-        if (top == "const_value" && tok.type == TokenType::PLUS) lookupTerminal = "+";
-        if (top == "const_value" && tok.type == TokenType::MINUS) lookupTerminal = "-";
-        if (tok.type == TokenType::EQ) {
-            auto rowCheck = grammar.parseTable.find(top);
-            if (rowCheck != grammar.parseTable.end() &&
-                rowCheck->second.find("=") != rowCheck->second.end()) {
-                lookupTerminal = "=";
-            }
-        }
-
         auto rowIt = grammar.parseTable.find(top);
         if (rowIt == grammar.parseTable.end()) {
             step.action = "ERROR: no parse table row for '" + top + "'";
@@ -346,6 +333,23 @@ bool Parser::parse() {
             addError("Internal error: no parse table row for non-terminal '" + top + "'");
             stk.pop();
             continue;
+        }
+
+        std::string lookupTerminal = input;
+        if (tok.type == TokenType::PLUS) {
+            if (rowIt->second.find("+") != rowIt->second.end()) {
+                lookupTerminal = "+";
+            } else if (rowIt->second.find("addop") != rowIt->second.end()) {
+                lookupTerminal = "addop";
+            }
+        } else if (tok.type == TokenType::MINUS) {
+            if (rowIt->second.find("-") != rowIt->second.end()) {
+                lookupTerminal = "-";
+            } else if (rowIt->second.find("addop") != rowIt->second.end()) {
+                lookupTerminal = "addop";
+            }
+        } else if (tok.type == TokenType::EQ && rowIt->second.find("=") != rowIt->second.end()) {
+            lookupTerminal = "=";
         }
 
         auto cellIt = rowIt->second.find(lookupTerminal);

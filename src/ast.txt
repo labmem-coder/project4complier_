@@ -1,12 +1,19 @@
-Program(name=test)
-  Parameters:
-    input
-    output
+Program(name=main)
+  Parameters: []
   Block
     Block
       ConstDecls[0]
-      VarDecls[0]
+      VarDecls[1]
+        VarDecl(type=integer)
+          a
       SubprogramDecls[0]
       Body
-        CompoundStmt[1]
+        CompoundStmt[3]
+          AssignStmt
+            Target
+              VariableExpr(name=a)
+            Value
+              VariableExpr(name=defn)
+          WriteStmt
+            VariableExpr(name=a)
           EmptyStmt
