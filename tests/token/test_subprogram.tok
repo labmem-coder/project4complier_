@@ -1,0 +1,73 @@
+# program test(input,output);
+# var a, b : integer;
+# function max(x, y : integer) : integer;
+# begin
+#   if x > y then max := x
+#   else max := y
+# end;
+# begin
+#   read(a, b);
+#   write(max(a, b))
+# end.
+PROGRAM program 1 1
+ID test 1 9
+LPAREN ( 1 13
+ID input 1 14
+COMMA , 1 19
+ID output 1 21
+RPAREN ) 1 27
+SEMICOLON ; 1 28
+VAR var 2 1
+ID a 2 5
+COMMA , 2 6
+ID b 2 8
+COLON : 2 10
+INTEGER integer 2 12
+SEMICOLON ; 2 19
+FUNCTION function 3 1
+ID max 3 10
+LPAREN ( 3 13
+ID x 3 14
+COMMA , 3 15
+ID y 3 17
+COLON : 3 19
+INTEGER integer 3 21
+RPAREN ) 3 28
+COLON : 3 29
+INTEGER integer 3 31
+SEMICOLON ; 3 38
+BEGIN begin 4 1
+IF if 5 3
+ID x 5 6
+GT > 5 8
+ID y 5 10
+THEN then 5 12
+ID max 6 5
+ASSIGN := 6 9
+ID x 6 12
+ELSE else 7 3
+ID max 8 5
+ASSIGN := 8 9
+ID y 8 12
+END end 9 1
+SEMICOLON ; 9 4
+BEGIN begin 10 1
+READ read 11 3
+LPAREN ( 11 7
+ID a 11 8
+COMMA , 11 9
+ID b 11 11
+RPAREN ) 11 12
+SEMICOLON ; 11 13
+WRITE write 12 3
+LPAREN ( 12 8
+ID max 12 9
+LPAREN ( 12 12
+ID a 12 13
+COMMA , 12 14
+ID b 12 16
+RPAREN ) 12 17
+RPAREN ) 12 18
+END end 13 1
+DOT . 13 4
+EOF EOF 14 1

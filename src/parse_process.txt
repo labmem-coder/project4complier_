@@ -1,0 +1,47 @@
+Parse Process Log
+=================
+
+------------------------------------------------------------
+Step   Stack                                    Input                          Action
+------------------------------------------------------------
+1      $ programstruct                          program test ( input , ou...   PREDICT programstruct -> program_head ; program_body .
+2      $ . program_body ; program_head          program test ( input , ou...   PREDICT program_head -> program id program_head'
+3      $ . program_body ; program_head' id...   program test ( input , ou...   MATCH 'program'
+4      $ . program_body ; program_head' id      test ( input , output ) ;...   MATCH 'id'
+5      $ . program_body ; program_head'         ( input , output ) ; begi...   PREDICT program_head' -> ( idlist )
+6      $ . program_body ; ) idlist (            ( input , output ) ; begi...   MATCH '('
+7      $ . program_body ; ) idlist              input , output ) ; begin ...   PREDICT idlist -> id idlist'
+8      $ . program_body ; ) idlist' id          input , output ) ; begin ...   MATCH 'id'
+9      $ . program_body ; ) idlist'             , output ) ; begin end . EOF   PREDICT idlist' -> , id idlist'
+10     $ . program_body ; ) idlist' id ,        , output ) ; begin end . EOF   MATCH ','
+11     $ . program_body ; ) idlist' id          output ) ; begin end . EOF     MATCH 'id'
+12     $ . program_body ; ) idlist'             ) ; begin end . EOF            PREDICT idlist' -> epsilon
+13     $ . program_body ; )                     ) ; begin end . EOF            REDUCE idlist' -> epsilon
+14     $ . program_body ; )                     ) ; begin end . EOF            REDUCE idlist' -> , id idlist'
+15     $ . program_body ; )                     ) ; begin end . EOF            REDUCE idlist -> id idlist'
+16     $ . program_body ; )                     ) ; begin end . EOF            MATCH ')'
+17     $ . program_body ;                       ; begin end . EOF              REDUCE program_head' -> ( idlist )
+18     $ . program_body ;                       ; begin end . EOF              REDUCE program_head -> program id program_head'
+19     $ . program_body ;                       ; begin end . EOF              MATCH ';'
+20     $ . program_body                         begin end . EOF                PREDICT program_body -> const_declarations var_declarations subprogram_declarations compound_statement
+21     $ . compound_statement subprogram_d...   begin end . EOF                PREDICT const_declarations -> epsilon
+22     $ . compound_statement subprogram_d...   begin end . EOF                REDUCE const_declarations -> epsilon
+23     $ . compound_statement subprogram_d...   begin end . EOF                PREDICT var_declarations -> epsilon
+24     $ . compound_statement subprogram_d...   begin end . EOF                REDUCE var_declarations -> epsilon
+25     $ . compound_statement subprogram_d...   begin end . EOF                PREDICT subprogram_declarations -> epsilon
+26     $ . compound_statement                   begin end . EOF                REDUCE subprogram_declarations -> epsilon
+27     $ . compound_statement                   begin end . EOF                PREDICT compound_statement -> begin statement_list end
+28     $ . end statement_list begin             begin end . EOF                MATCH 'begin'
+29     $ . end statement_list                   end . EOF                      PREDICT statement_list -> statement statement_list'
+30     $ . end statement_list' statement        end . EOF                      PREDICT statement -> epsilon
+31     $ . end statement_list'                  end . EOF                      REDUCE statement -> epsilon
+32     $ . end statement_list'                  end . EOF                      PREDICT statement_list' -> epsilon
+33     $ . end                                  end . EOF                      REDUCE statement_list' -> epsilon
+34     $ . end                                  end . EOF                      REDUCE statement_list -> statement statement_list'
+35     $ . end                                  end . EOF                      MATCH 'end'
+36     $ .                                      . EOF                          REDUCE compound_statement -> begin statement_list end
+37     $ .                                      . EOF                          REDUCE program_body -> const_declarations var_declarations subprogram_declarations compound_statement
+38     $ .                                      . EOF                          MATCH '.'
+39     $                                        EOF                            REDUCE programstruct -> program_head ; program_body .
+40     $                                        EOF                            ACCEPT
+------------------------------------------------------------

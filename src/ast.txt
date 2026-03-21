@@ -1,0 +1,12 @@
+Program(name=test)
+  Parameters:
+    input
+    output
+  Block
+    Block
+      ConstDecls[0]
+      VarDecls[0]
+      SubprogramDecls[0]
+      Body
+        CompoundStmt[1]
+          EmptyStmt
