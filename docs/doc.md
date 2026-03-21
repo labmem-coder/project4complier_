@@ -11,8 +11,15 @@
 
 ```bash
 cd src
+
+# 主程序：输出名可自定义
 g++ -std=c++17 -Wall -Wextra -O2 -I. -I./lexer -I./parser main.cpp lexer/lexer.cpp parser/grammar.cpp parser/parser.cpp -o pascal_compiler
-g++ -std=c++17 -Wall -Wextra -O2 -g -I. -I./lexer -I./parser main.cpp lexer/lexer.cpp parser/grammar.cpp parser/parser.cpp -o pascal_compiler
+g++ -std=c++17 -Wall -Wextra -O2 -g -I. -I./lexer -I./parser main.cpp lexer/lexer.cpp parser/grammar.cpp parser/parser.cpp -o pascal_parser
+
+# 说明：
+# `pascal_compiler` 与 `pascal_parser` 由同一套源码、同一条编译指令生成，
+# 唯一区别只是 `-o` 指定的输出文件名不同。
+# 两者本质上是同一个主程序。
 
 g++ -std=c++17 -Wall -Wextra -O2 -I. -I./lexer -I./parser ../tests/test_lexer.cpp lexer/lexer.cpp -o test_lexer
 ./test_lexer
@@ -23,18 +30,36 @@ g++ -std=c++17 -Wall -Wextra -O2 -I. -I./lexer -I./parser ../tests/test_integrat
 ### 运行
 
 ```bash
+# 若主程序编译为 pascal_compiler：
 ./pascal_compiler --lex <source.pas>
 ./pascal_compiler <source.pas|token_file.tok>
 ./pascal_compiler --grammar
 ./pascal_compiler --first-follow
 ./pascal_compiler --table
 ./pascal_compiler --all <source.pas|token_file.tok>
+
+# 若主程序编译为 pascal_parser：
+./pascal_parser --lex <source.pas>
+./pascal_parser <source.pas|token_file.tok>
+./pascal_parser --grammar
+./pascal_parser --first-follow
+./pascal_parser --table
+./pascal_parser --all <source.pas|token_file.tok>
 ```
 
 `--all` 模式会输出：
 - `tokens.txt`
 - `parse_process.txt`
 - `ast.txt`
+
+### 可执行文件说明
+
+- `pascal_compiler(.exe)` / `pascal_parser(.exe)`：
+  主程序，用于对 `.pas` 或 token 文件执行词法分析、语法分析，并按参数输出分析结果。
+- `test_lexer(.exe)`：
+  词法分析测试程序，用于验证 token 切分、关键字识别、注释跳过、大小写不敏感等行为。
+- `test_integration(.exe)`：
+  词法分析与语法分析集成测试程序，用于验证完整输入程序能否成功通过 lexer、parser，并构建 AST。
 
 ## 2. 输入格式
 
