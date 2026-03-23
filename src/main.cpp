@@ -2,6 +2,8 @@
 #include "parser.h"
 #include "lexer.h"
 #include "token.h"
+#include "semantic_analyzer.h"
+#include "codegen.h"
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -21,12 +23,13 @@ static std::string readFile(const std::string& path) {
 static void printUsage(const char* prog) {
     std::cerr
         << "Usage:\n"
-        << "  " << prog << " <source.pas>               Lex + Parse (on-demand)\n"
+        << "  " << prog << " <source.pas>               Full pipeline (parse+semantic+codegen)\n"
         << "  " << prog << " --lex <source.pas>         Lex only (print tokens)\n"
         << "  " << prog << " --grammar                  Print LL(1) grammar\n"
         << "  " << prog << " --first-follow             Print FIRST/FOLLOW sets\n"
         << "  " << prog << " --table                    Print LL(1) parse table\n"
-        << "  " << prog << " --all <source.pas>         Print everything + parse\n";
+        << "  " << prog << " --all <source.pas>         Print everything + parse\n"
+        << "  " << prog << " -o <out.c> <source.pas>    Output generated C code to file\n";
 }
 
 static void printTokens(const std::vector<Token>& tokens, std::ostream& os) {
@@ -50,10 +53,11 @@ static Grammar buildGrammar() {
 }
 
 // ---------------------------------------------------------------------------
-// Run the full pipeline: source → Lexer(on-demand) → Parser → AST
+// Run the full pipeline: source → Lexer → Parser → AST → Semantic → C code
 // ---------------------------------------------------------------------------
-static bool runPipeline(Grammar& g, const std::string& inputFile, bool verbose) {
-    if (verbose) std::cout << "[pipeline] Lexing + parsing source file (on-demand)\n";
+static bool runPipeline(Grammar& g, const std::string& inputFile,
+                        bool verbose, const std::string& outputFile = "") {
+    if (verbose) std::cout << "[pipeline] Stage 1-2: Lexing + parsing (on-demand)\n";
     std::string source = readFile(inputFile);
     if (source.empty()) {
         std::cerr << "Error: cannot open or empty source file: " << inputFile << "\n";
@@ -62,7 +66,7 @@ static bool runPipeline(Grammar& g, const std::string& inputFile, bool verbose) 
     Lexer lexer(source);
     Parser parser(g, lexer);
 
-    // Stage 2: Parse → AST
+    // ---- Stage 1-2: Lex + Parse → AST ----
     bool success = parser.parse();
 
     // Report lexer errors (collected during on-demand tokenization)
@@ -87,30 +91,74 @@ static bool runPipeline(Grammar& g, const std::string& inputFile, bool verbose) 
         std::cout << "[pipeline] Parse process written to parse_process.txt\n";
     }
 
-    if (success) {
-        std::cout << "\n*** PARSE SUCCESSFUL ***\n\n";
-        std::cout << "=== AST ===\n";
-        printAST(parser.getASTRoot(), std::cout);
-
-        if (verbose) {
-            std::ofstream fout("ast.txt");
-            printAST(parser.getASTRoot(), fout);
-            std::cout << "\n[pipeline] AST written to ast.txt\n";
-        }
-
-        // --- Future pipeline stages ---
-        // Stage 3: Semantic analysis  (TODO)
-        // Stage 4: C code generation  (TODO)
-    } else {
+    if (!success) {
         std::cerr << "\n*** PARSE FAILED with "
                   << parser.getErrors().size() << " error(s): ***\n";
         for (auto& err : parser.getErrors()) {
             std::cerr << "  [Line " << err.line << ", Col " << err.column << "] "
                       << err.message << "\n";
         }
+        return false;
     }
 
-    return success;
+    std::cout << "\n*** PARSE SUCCESSFUL ***\n";
+    if (verbose) {
+        std::cout << "\n=== AST ===\n";
+        printAST(parser.getASTRoot(), std::cout);
+        std::ofstream fout("ast.txt");
+        printAST(parser.getASTRoot(), fout);
+        std::cout << "\n[pipeline] AST written to ast.txt\n";
+    }
+
+    // ---- Stage 3: Semantic analysis ----
+    if (verbose) std::cout << "\n[pipeline] Stage 3: Semantic analysis\n";
+    SemanticAnalyzer analyzer;
+    bool semOk = analyzer.analyze(parser.getASTRoot());
+
+    if (analyzer.hasErrors()) {
+        std::cerr << "\n*** SEMANTIC ERRORS (" << analyzer.getErrors().size() << ") ***\n";
+        for (const auto& err : analyzer.getErrors()) {
+            std::cerr << "  " << err.message << "\n";
+        }
+    }
+    if (!semOk) {
+        std::cerr << "\nSemantic analysis failed. Code generation skipped.\n";
+        return false;
+    }
+    std::cout << "\n*** SEMANTIC ANALYSIS PASSED ***\n";
+
+    // ---- Stage 4: C code generation ----
+    if (verbose) std::cout << "\n[pipeline] Stage 4: C code generation\n";
+    CCodeGenerator codegen;
+    std::string cCode = codegen.generate(parser.getASTRoot());
+
+    // Determine output file name
+    std::string outPath = outputFile;
+    if (outPath.empty()) {
+        // Derive from input: foo.pas -> foo.c
+        outPath = inputFile;
+        auto dot = outPath.rfind('.');
+        if (dot != std::string::npos)
+            outPath = outPath.substr(0, dot) + ".c";
+        else
+            outPath += ".c";
+    }
+
+    std::ofstream fout(outPath);
+    if (!fout.is_open()) {
+        std::cerr << "Error: cannot write output file: " << outPath << "\n";
+        return false;
+    }
+    fout << cCode;
+    fout.close();
+    std::cout << "\n*** C CODE GENERATED: " << outPath << " ***\n";
+
+    if (verbose) {
+        std::cout << "\n=== Generated C Code ===\n";
+        std::cout << cCode;
+    }
+
+    return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -203,6 +251,17 @@ int main(int argc, char* argv[]) {
         inputFile = mode;
     }
 
-    bool success = runPipeline(g, inputFile, verbose);
+    // Check for -o flag
+    std::string outputFile;
+    if (mode == "-o") {
+        if (argc < 4) {
+            std::cerr << "Error: -o requires <output.c> and <source.pas> arguments.\n";
+            return 1;
+        }
+        outputFile = argv[2];
+        inputFile = argv[3];
+    }
+
+    bool success = runPipeline(g, inputFile, verbose, outputFile);
     return success ? 0 : 1;
 }

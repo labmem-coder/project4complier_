@@ -24,7 +24,15 @@ src/
 │   ├── ast.h            # AST 节点层次结构、ASTVisitor 基类
 │   ├── parser.h         # Parser 类、SemanticValue、SemanticAction 类型定义
 │   └── parser.cpp       # LL(1) 驱动、语义动作注册表 (registerDefaultActions)
-├── main.cpp             # 命令行入口、编译 pipeline
+├── semantic/
+│   ├── symbol_table.h   # TypeInfo、Symbol、SymbolTable 定义
+│   ├── symbol_table.cpp # SymbolTable 实现（作用域栈）
+│   ├── semantic_analyzer.h   # SemanticAnalyzer 声明 (ASTVisitor)
+│   └── semantic_analyzer.cpp # 语义检查实现（声明/类型/作用域）
+├── codegen/
+│   ├── codegen.h        # CCodeGenerator 声明 (ASTVisitor)
+│   └── codegen.cpp      # Pascal-S → C 代码生成实现
+├── main.cpp             # 命令行入口、编译 pipeline (lex→parse→semantic→codegen)
 tests/
 ├── correct_test/        # 期望解析成功的 .pas 测试文件
 ├── error_test_bison/    # 期望有语法错误的 .pas 测试文件

@@ -710,22 +710,104 @@ void Parser::registerDefaultActions() {
         return std::monostate{};
     });
 
-    // --- subprogram (placeholder — not yet fully implemented) ---
-    registerAction("subprogram", [](const Production&, const std::vector<SemanticValue>&) -> SemanticValue {
+    // --- subprogram → subprogram_head ; subprogram_body ---
+    registerAction("subprogram", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (rhsEquals(p, {"subprogram_head", ";", "subprogram_body"})) {
+            auto head = std::dynamic_pointer_cast<SubprogramDeclNode>(declValue(v[0]));
+            auto body = blockValue(v[2]);
+            if (head) {
+                head->body = body;
+                return std::static_pointer_cast<DeclNode>(head);
+            }
+        }
         return DeclNodePtr{};
     });
 
-    // --- subprogram_head, formal_parameter, parameter_list, etc. ---
-    auto passthrough = [](const Production&, const std::vector<SemanticValue>&) -> SemanticValue {
+    // --- subprogram_head ---
+    registerAction("subprogram_head", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        // procedure id formal_parameter
+        if (rhsEquals(p, {"procedure", "id", "formal_parameter"})) {
+            auto node = std::make_shared<SubprogramDeclNode>();
+            node->headerKind = "procedure";
+            node->name = tokenLexeme(v[1]);
+            node->parameters = declListValue(v[2]);
+            return std::static_pointer_cast<DeclNode>(node);
+        }
+        // function id formal_parameter : basic_type
+        if (rhsEquals(p, {"function", "id", "formal_parameter", ":", "basic_type"})) {
+            auto node = std::make_shared<SubprogramDeclNode>();
+            node->headerKind = "function";
+            node->name = tokenLexeme(v[1]);
+            node->parameters = declListValue(v[2]);
+            node->returnType = typeNameFromBasic(v[4]);
+            return std::static_pointer_cast<DeclNode>(node);
+        }
         return std::monostate{};
-    };
-    registerAction("subprogram_head", passthrough);
-    registerAction("formal_parameter", passthrough);
-    registerAction("parameter_list", passthrough);
-    registerAction("parameter_list'", passthrough);
-    registerAction("parameter", passthrough);
-    registerAction("var_parameter", passthrough);
-    registerAction("value_parameter", passthrough);
+    });
+
+    // --- formal_parameter ---
+    registerAction("formal_parameter", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (p.rhs.empty()) return DeclNodeList{};  // ε
+        // ( parameter_list )
+        if (rhsEquals(p, {"(", "parameter_list", ")"})) {
+            return declListValue(v[1]);
+        }
+        return DeclNodeList{};
+    });
+
+    // --- parameter_list → parameter parameter_list' ---
+    registerAction("parameter_list", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (rhsEquals(p, {"parameter", "parameter_list'"})) {
+            DeclNodeList params;
+            auto first = declValue(v[0]);
+            if (first) params.push_back(first);
+            appendDeclList(params, declListValue(v[1]));
+            return params;
+        }
+        return DeclNodeList{};
+    });
+
+    // --- parameter_list' → ; parameter parameter_list' | ε ---
+    registerAction("parameter_list'", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (p.rhs.empty()) return DeclNodeList{};  // ε
+        if (rhsEquals(p, {";", "parameter", "parameter_list'"})) {
+            DeclNodeList params;
+            auto first = declValue(v[1]);
+            if (first) params.push_back(first);
+            appendDeclList(params, declListValue(v[2]));
+            return params;
+        }
+        return DeclNodeList{};
+    });
+
+    // --- parameter → var_parameter | value_parameter ---
+    registerAction("parameter", [](const Production&, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (!v.empty()) return declValue(v[0]);
+        return DeclNodePtr{};
+    });
+
+    // --- var_parameter → var value_parameter ---
+    registerAction("var_parameter", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (rhsEquals(p, {"var", "value_parameter"})) {
+            auto param = std::dynamic_pointer_cast<ParamDeclNode>(declValue(v[1]));
+            if (param) {
+                param->byReference = true;
+                return std::static_pointer_cast<DeclNode>(param);
+            }
+        }
+        return DeclNodePtr{};
+    });
+
+    // --- value_parameter → idlist : basic_type ---
+    registerAction("value_parameter", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (rhsEquals(p, {"idlist", ":", "basic_type"})) {
+            auto node = std::make_shared<ParamDeclNode>();
+            node->names = stringListValue(v[0]);
+            node->typeName = typeNameFromBasic(v[2]);
+            return std::static_pointer_cast<DeclNode>(node);
+        }
+        return DeclNodePtr{};
+    });
 
     // --- subprogram_body ---
     registerAction("subprogram_body", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {

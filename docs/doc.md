@@ -45,7 +45,32 @@
 ### 主程序
 
 进入 `src` 目录后执行：
+## 生成C代码
+```bash
+cd src
+g++ -std=c++17 -Isrc/lexer -Isrc/parser -Isrc/semantic -Isrc/codegen -o src/pascal_compiler.exe src/main.cpp src/lexer/lexer.cpp src/parser/grammar.cpp src/parser/parser.cpp src/semantic/symbol_table.cpp src/semantic/semantic_analyzer.cpp src/codegen/codegen.cpp
 
+# 简单程序
+src/pascal_compiler.exe tests/correct_test/correct1.pas
+
+# 数组测试
+src/pascal_compiler.exe tests/correct_test/correct5.pas
+
+# 函数测试
+src/pascal_compiler.exe tests/correct_test/correct2.pas
+
+# 详细输出 (打印 AST + 生成的 C 代码)
+src/pascal_compiler.exe --all tests/correct_test/correct4.pas
+
+# 指定输出文件
+src/pascal_compiler.exe -o output.c tests/correct_test/correct1.pas
+
+# 验证生成的 C 代码能否编译运行
+gcc -o test_output tests/correct_test/correct1.c
+./test_output
+```
+
+## 词法语法分析部分
 ```bash
 cd src
 g++ -std=c++17 -Wall -Wextra -O2 -I. -I./lexer -I./parser main.cpp lexer/lexer.cpp parser/grammar.cpp parser/parser.cpp -o pascal_compiler
