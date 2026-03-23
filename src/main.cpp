@@ -1,5 +1,6 @@
 #include "grammar.h"
 #include "parser.h"
+#include "lexer.h"
 #include "token.h"
 #include <fstream>
 #include <iostream>
@@ -9,11 +10,6 @@
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-static bool endsWith(const std::string& s, const std::string& suffix) {
-    if (suffix.size() > s.size()) return false;
-    return s.compare(s.size() - suffix.size(), suffix.size(), suffix) == 0;
-}
-
 static std::string readFile(const std::string& path) {
     std::ifstream fin(path);
     if (!fin.is_open()) return "";
@@ -25,12 +21,12 @@ static std::string readFile(const std::string& path) {
 static void printUsage(const char* prog) {
     std::cerr
         << "Usage:\n"
-        << "  " << prog << " <source.pas|tokens.tok>   Lex (if .pas) + Parse\n"
+        << "  " << prog << " <source.pas>               Lex + Parse (on-demand)\n"
         << "  " << prog << " --lex <source.pas>         Lex only (print tokens)\n"
         << "  " << prog << " --grammar                  Print LL(1) grammar\n"
         << "  " << prog << " --first-follow             Print FIRST/FOLLOW sets\n"
         << "  " << prog << " --table                    Print LL(1) parse table\n"
-        << "  " << prog << " --all <source.pas|.tok>    Print everything + parse\n";
+        << "  " << prog << " --all <source.pas>         Print everything + parse\n";
 }
 
 static void printTokens(const std::vector<Token>& tokens, std::ostream& os) {
@@ -39,31 +35,6 @@ static void printTokens(const std::vector<Token>& tokens, std::ostream& os) {
            << tok.lexeme << " "
            << tok.line << " " << tok.column << "\n";
     }
-}
-
-// ---------------------------------------------------------------------------
-// Legacy .tok file reader (kept for backward compatibility only)
-// ---------------------------------------------------------------------------
-static std::vector<Token> readTokensFromFile(const std::string& filename) {
-    std::vector<Token> tokens;
-    std::ifstream fin(filename);
-    if (!fin.is_open()) {
-        std::cerr << "Error: cannot open token file: " << filename << "\n";
-        return tokens;
-    }
-    auto nameMap = buildTokenNameMap();
-    std::string line;
-    while (std::getline(fin, line)) {
-        if (line.empty() || line[0] == '#') continue;
-        std::istringstream iss(line);
-        std::string typeName, lexeme;
-        int ln = 0, col = 0;
-        if (!(iss >> typeName >> lexeme >> ln >> col)) continue;
-        auto it = nameMap.find(typeName);
-        if (it == nameMap.end()) continue;
-        tokens.push_back({it->second, lexeme, ln, col});
-    }
-    return tokens;
 }
 
 // ---------------------------------------------------------------------------
@@ -79,68 +50,51 @@ static Grammar buildGrammar() {
 }
 
 // ---------------------------------------------------------------------------
-// Run the full pipeline: source/tokens → Parser → AST
-//   For .pas files: Parser lexes internally via Parser(grammar, source)
-//   For .tok files: read tokens, then Parser(grammar, tokens)
+// Run the full pipeline: source → Lexer(on-demand) → Parser → AST
 // ---------------------------------------------------------------------------
 static bool runPipeline(Grammar& g, const std::string& inputFile, bool verbose) {
-    Parser* parserPtr = nullptr;
-    std::unique_ptr<Parser> parser;
+    if (verbose) std::cout << "[pipeline] Lexing + parsing source file (on-demand)\n";
+    std::string source = readFile(inputFile);
+    if (source.empty()) {
+        std::cerr << "Error: cannot open or empty source file: " << inputFile << "\n";
+        return false;
+    }
+    Lexer lexer(source);
+    Parser parser(g, lexer);
 
-    if (endsWith(inputFile, ".tok")) {
-        // Legacy path: pre-tokenized file
-        if (verbose) std::cout << "[pipeline] Reading pre-tokenized file\n";
-        auto tokens = readTokensFromFile(inputFile);
-        if (tokens.empty()) {
-            std::cerr << "Error: no tokens read from " << inputFile << "\n";
-            return false;
-        }
-        parser = std::make_unique<Parser>(g, tokens);
-    } else {
-        // Primary path: lexer integrated in parser
-        if (verbose) std::cout << "[pipeline] Lexing + parsing source file\n";
-        std::string source = readFile(inputFile);
-        if (source.empty()) {
-            std::cerr << "Error: cannot open or empty source file: " << inputFile << "\n";
-            return false;
-        }
-        parser = std::make_unique<Parser>(g, source);
+    // Stage 2: Parse → AST
+    bool success = parser.parse();
 
-        // Report lexer errors
-        if (parser->hasLexerErrors()) {
-            std::cerr << "*** LEXER ERRORS ***\n";
-            for (const auto& err : parser->getLexerErrors()) {
-                std::cerr << "  [Line " << err.line << ", Col " << err.column << "] "
-                          << err.message << "\n";
-            }
+    // Report lexer errors (collected during on-demand tokenization)
+    if (parser.hasLexerErrors()) {
+        std::cerr << "*** LEXER ERRORS ***\n";
+        for (const auto& err : parser.getLexerErrors()) {
+            std::cerr << "  [Line " << err.line << ", Col " << err.column << "] "
+                      << err.message << "\n";
         }
     }
-    parserPtr = parser.get();
 
-    // Dump token list if verbose
+    // Dump consumed token list if verbose
     if (verbose) {
         std::ofstream fout("tokens.txt");
-        printTokens(parserPtr->getTokens(), fout);
+        printTokens(parser.getConsumedTokens(), fout);
         std::cout << "[pipeline] Token list written to tokens.txt\n";
     }
 
-    // Stage 2: Parse → AST
-    bool success = parserPtr->parse();
-
     if (verbose) {
         std::ofstream fout("parse_process.txt");
-        parserPtr->printParseProcess(fout);
+        parser.printParseProcess(fout);
         std::cout << "[pipeline] Parse process written to parse_process.txt\n";
     }
 
     if (success) {
         std::cout << "\n*** PARSE SUCCESSFUL ***\n\n";
         std::cout << "=== AST ===\n";
-        printAST(parserPtr->getASTRoot(), std::cout);
+        printAST(parser.getASTRoot(), std::cout);
 
         if (verbose) {
             std::ofstream fout("ast.txt");
-            printAST(parserPtr->getASTRoot(), fout);
+            printAST(parser.getASTRoot(), fout);
             std::cout << "\n[pipeline] AST written to ast.txt\n";
         }
 
@@ -149,8 +103,8 @@ static bool runPipeline(Grammar& g, const std::string& inputFile, bool verbose) 
         // Stage 4: C code generation  (TODO)
     } else {
         std::cerr << "\n*** PARSE FAILED with "
-                  << parserPtr->getErrors().size() << " error(s): ***\n";
-        for (auto& err : parserPtr->getErrors()) {
+                  << parser.getErrors().size() << " error(s): ***\n";
+        for (auto& err : parser.getErrors()) {
             std::cerr << "  [Line " << err.line << ", Col " << err.column << "] "
                       << err.message << "\n";
         }

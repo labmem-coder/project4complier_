@@ -9,6 +9,9 @@
 #include <string>
 #include <stack>
 #include <variant>
+#include <functional>
+#include <unordered_map>
+#include <memory>
 
 struct ParseError {
     int line;
@@ -57,31 +60,46 @@ using SemanticValue = std::variant<
     StatementTail
 >;
 
+// Semantic action signature: (production, rhsValues) -> reduced SemanticValue
+using SemanticAction = std::function<SemanticValue(
+    const Production& production,
+    const std::vector<SemanticValue>& rhsValues)>;
+
 class Parser {
 public:
-    // Construct from Pascal-S source code (lexes internally)
-    Parser(Grammar& grammar, const std::string& source);
-
-    // Construct from pre-lexed token stream
-    Parser(Grammar& grammar, const std::vector<Token>& tokens);
+    // Construct from a Lexer (on-demand tokenization; Parser does NOT own the Lexer)
+    Parser(Grammar& grammar, Lexer& lexer);
 
     bool parse();
 
     const std::vector<ParseError>& getErrors() const { return errors; }
-    const std::vector<LexerError>& getLexerErrors() const { return lexerErrors; }
-    bool hasLexerErrors() const { return !lexerErrors.empty(); }
-    const std::vector<Token>& getTokens() const { return tokens; }
+    const std::vector<LexerError>& getLexerErrors() const;
+    bool hasLexerErrors() const;
+    const std::vector<Token>& getConsumedTokens() const { return consumedTokens; }
     void printParseProcess(std::ostream& os) const;
     ProgramNodePtr getASTRoot() const { return astRoot; }
 
+    // ---------------------------------------------------------------------------
+    // Extensible semantic action registry
+    // Key: production LHS name (e.g. "statement", "expression")
+    // Each registered handler is tried in order; it may return std::monostate
+    // to signal "not handled", and the next handler will be tried.
+    // ---------------------------------------------------------------------------
+    void registerAction(const std::string& lhs, SemanticAction action);
+
 private:
     Grammar& grammar;
-    std::vector<Token> tokens;
-    std::vector<LexerError> lexerErrors;
-    size_t pos;
+    Lexer* lexer;                        // non-owning
+
+    Token currentTok;                    // current lookahead token
+    std::vector<Token> consumedTokens;   // history of all tokens consumed
     std::vector<ParseError> errors;
     ProgramNodePtr astRoot;
     std::vector<SemanticValue> semanticStack;
+
+    // Extensible action table: lhs -> list of handlers (tried in order)
+    std::unordered_map<std::string, std::vector<SemanticAction>> actionTable;
+    void registerDefaultActions();
 
     // Parse process log
     struct ParseStep {

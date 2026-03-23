@@ -135,17 +135,19 @@ std::string typeNameFromBasic(const SemanticValue& value) {
 
 } // namespace
 
-Parser::Parser(Grammar& grammar, const std::string& source)
-    : grammar(grammar), pos(0), astRoot(nullptr) {
-    Lexer lexer(source);
-    tokens = lexer.tokenize();
-    if (lexer.hasErrors()) {
-        lexerErrors = lexer.getErrors();
-    }
+Parser::Parser(Grammar& grammar, Lexer& lexer)
+    : grammar(grammar), lexer(&lexer), astRoot(nullptr) {
+    currentTok = this->lexer->nextToken();
+    registerDefaultActions();
 }
 
-Parser::Parser(Grammar& grammar, const std::vector<Token>& tokens)
-    : grammar(grammar), tokens(tokens), pos(0), astRoot(nullptr) {}
+const std::vector<LexerError>& Parser::getLexerErrors() const {
+    return lexer->getErrors();
+}
+
+bool Parser::hasLexerErrors() const {
+    return lexer->hasErrors();
+}
 
 std::string Parser::mapTokenToGrammarTerminal(const Token& tok) const {
     switch (tok.type) {
@@ -171,17 +173,16 @@ std::string Parser::mapTokenToGrammarTerminal(const Token& tok) const {
 }
 
 std::string Parser::currentTerminal() const {
-    if (pos >= tokens.size()) return "$";
-    return mapTokenToGrammarTerminal(tokens[pos]);
+    return mapTokenToGrammarTerminal(currentTok);
 }
 
 Token Parser::currentToken() const {
-    if (pos >= tokens.size()) return {TokenType::END_OF_FILE, "EOF", 0, 0};
-    return tokens[pos];
+    return currentTok;
 }
 
 void Parser::advance() {
-    if (pos < tokens.size()) pos++;
+    consumedTokens.push_back(currentTok);
+    currentTok = lexer->nextToken();
 }
 
 void Parser::addError(const std::string& msg) {
@@ -208,14 +209,9 @@ std::string Parser::stackToString(const std::stack<std::string>& st) const {
 }
 
 std::string Parser::remainingInput() const {
-    std::string result;
-    for (size_t i = pos; i < tokens.size() && i < pos + 10; ++i) {
-        if (!result.empty()) result += " ";
-        result += tokens[i].lexeme;
-    }
-    if (pos + 10 < tokens.size()) result += " ...";
-    if (pos >= tokens.size()) result = "$";
-    return result;
+    // In on-demand mode we only have the current lookahead
+    if (currentTok.type == TokenType::END_OF_FILE) return "$";
+    return currentTok.lexeme + " ...";
 }
 
 std::string Parser::makeActionSymbol(int productionIndex) const {
@@ -234,8 +230,8 @@ bool Parser::parse() {
     errors.clear();
     steps.clear();
     semanticStack.clear();
+    consumedTokens.clear();
     astRoot.reset();
-    pos = 0;
 
     std::stack<std::string> stk;
     stk.push("$");
@@ -375,9 +371,9 @@ bool Parser::parse() {
                 stk.pop();
                 recovered = true;
             } else {
-                while (pos < tokens.size()) {
+                while (currentTok.type != TokenType::END_OF_FILE) {
                     std::string nextT = currentTerminal();
-                    if (top == "factor" && tokens[pos].type == TokenType::MINUS) nextT = "-";
+                    if (top == "factor" && currentTok.type == TokenType::MINUS) nextT = "-";
                     if (firstSet.count(nextT) || followSet.count(nextT)) {
                         recovered = true;
                         break;
@@ -436,508 +432,627 @@ void Parser::executeSemanticAction(int productionIndex) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Extensible action registry
+// ---------------------------------------------------------------------------
+void Parser::registerAction(const std::string& lhs, SemanticAction action) {
+    // New actions are prepended so that user-registered actions take priority
+    actionTable[lhs].insert(actionTable[lhs].begin(), std::move(action));
+}
+
 SemanticValue Parser::buildSemanticValue(const Production& production,
                                          const std::vector<SemanticValue>& rhsValues) {
-    const std::string& lhs = production.lhs;
-
-    if (lhs == "programstruct" && rhsEquals(production, {"program_head", ";", "program_body", "."})) {
-        auto program = programValue(rhsValues[0]);
-        if (!program) program = std::make_shared<ProgramNode>();
-        program->block = blockValue(rhsValues[2]);
-        return program;
-    }
-
-    if (lhs == "program_head" && rhsEquals(production, {"program", "id", "(", "idlist", ")"})) {
-        auto program = std::make_shared<ProgramNode>();
-        program->name = tokenLexeme(rhsValues[1]);
-        program->parameters = stringListValue(rhsValues[3]);
-        return program;
-    }
-
-    if (lhs == "program_head" && rhsEquals(production, {"program", "id", "program_head'"})) {
-        auto program = std::make_shared<ProgramNode>();
-        program->name = tokenLexeme(rhsValues[1]);
-        program->parameters = stringListValue(rhsValues[2]);
-        return program;
-    }
-
-    if (lhs == "program_head" && rhsEquals(production, {"program", "id"})) {
-        auto program = std::make_shared<ProgramNode>();
-        program->name = tokenLexeme(rhsValues[1]);
-        return program;
-    }
-
-    if (lhs == "program_head'" && rhsEquals(production, {"(", "idlist", ")"})) {
-        return stringListValue(rhsValues[1]);
-    }
-
-    if (lhs == "program_head'" && production.rhs.empty()) {
-        return std::vector<std::string>{};
-    }
-
-    if (lhs == "program_body" &&
-        rhsEquals(production, {"const_declarations", "var_declarations",
-                               "subprogram_declarations", "compound_statement"})) {
-        auto block = std::make_shared<BlockNode>();
-        block->constDecls = declListValue(rhsValues[0]);
-        block->varDecls = declListValue(rhsValues[1]);
-        block->subprogramDecls = declListValue(rhsValues[2]);
-        block->compoundStmt = stmtValue(rhsValues[3]);
-        return block;
-    }
-
-    if (lhs == "idlist" && rhsEquals(production, {"id", "idlist'"})) {
-        std::vector<std::string> names{tokenLexeme(rhsValues[0])};
-        const auto tail = stringListValue(rhsValues[1]);
-        names.insert(names.end(), tail.begin(), tail.end());
-        return names;
-    }
-
-    if (lhs == "idlist'" && rhsEquals(production, {",", "id", "idlist'"})) {
-        std::vector<std::string> names{tokenLexeme(rhsValues[1])};
-        const auto tail = stringListValue(rhsValues[2]);
-        names.insert(names.end(), tail.begin(), tail.end());
-        return names;
-    }
-
-    if (lhs == "idlist'" && production.rhs.empty()) return std::vector<std::string>{};
-
-    if (lhs == "const_declarations" && production.rhs.empty()) return DeclNodeList{};
-    if (lhs == "const_declarations" && rhsEquals(production, {"const", "const_decl_list"})) {
-        return declListValue(rhsValues[1]);
-    }
-
-    if (lhs == "const_decl_list" &&
-        rhsEquals(production, {"id", "=", "const_value", ";", "const_decl_list_tail"})) {
-        DeclNodeList decls;
-        auto node = std::make_shared<ConstDeclNode>();
-        node->name = tokenLexeme(rhsValues[0]);
-        node->value = exprValue(rhsValues[2]);
-        decls.push_back(node);
-        appendDeclList(decls, declListValue(rhsValues[4]));
-        return decls;
-    }
-
-    if (lhs == "const_decl_list_tail" &&
-        rhsEquals(production, {"id", "=", "const_value", ";", "const_decl_list_tail"})) {
-        DeclNodeList decls;
-        auto node = std::make_shared<ConstDeclNode>();
-        node->name = tokenLexeme(rhsValues[0]);
-        node->value = exprValue(rhsValues[2]);
-        decls.push_back(node);
-        appendDeclList(decls, declListValue(rhsValues[4]));
-        return decls;
-    }
-
-    if (lhs == "const_decl_list_tail" && production.rhs.empty()) return DeclNodeList{};
-
-    if (lhs == "const_value" && rhsEquals(production, {"+", "num"})) {
-        auto literal = std::make_shared<LiteralExprNode>();
-        literal->literalType = "num";
-        literal->value = "+" + tokenLexeme(rhsValues[1]);
-        return std::static_pointer_cast<ExprNode>(literal);
-    }
-
-    if (lhs == "const_value" && rhsEquals(production, {"-", "num"})) {
-        auto literal = std::make_shared<LiteralExprNode>();
-        literal->literalType = "num";
-        literal->value = "-" + tokenLexeme(rhsValues[1]);
-        return std::static_pointer_cast<ExprNode>(literal);
-    }
-
-    if (lhs == "const_value" && rhsEquals(production, {"num"})) {
-        auto literal = std::make_shared<LiteralExprNode>();
-        literal->literalType = "num";
-        literal->value = tokenLexeme(rhsValues[0]);
-        return std::static_pointer_cast<ExprNode>(literal);
-    }
-
-    if (lhs == "const_value" && rhsEquals(production, {"letter"})) {
-        auto literal = std::make_shared<LiteralExprNode>();
-        literal->literalType = "char";
-        literal->value = tokenLexeme(rhsValues[0]);
-        return std::static_pointer_cast<ExprNode>(literal);
-    }
-
-    if (lhs == "var_declarations" && production.rhs.empty()) return DeclNodeList{};
-    if (lhs == "var_declarations" && rhsEquals(production, {"var", "var_decl_list"})) {
-        return declListValue(rhsValues[1]);
-    }
-
-    if (lhs == "var_decl_list" &&
-        rhsEquals(production, {"idlist", ":", "type", ";", "var_decl_list_tail"})) {
-        DeclNodeList decls;
-        auto node = std::make_shared<VarDeclNode>();
-        node->names = stringListValue(rhsValues[0]);
-        node->typeName = stringValue(rhsValues[2]);
-        decls.push_back(node);
-        appendDeclList(decls, declListValue(rhsValues[4]));
-        return decls;
-    }
-
-    if (lhs == "var_decl_list" &&
-        rhsEquals(production, {"id", "idlist'", ":", "type", ";", "var_decl_list_tail"})) {
-        DeclNodeList decls;
-        auto node = std::make_shared<VarDeclNode>();
-        node->names.push_back(tokenLexeme(rhsValues[0]));
-        const auto tailNames = stringListValue(rhsValues[1]);
-        node->names.insert(node->names.end(), tailNames.begin(), tailNames.end());
-        node->typeName = stringValue(rhsValues[3]);
-        decls.push_back(node);
-        appendDeclList(decls, declListValue(rhsValues[5]));
-        return decls;
-    }
-
-    if (lhs == "var_decl_list_tail" &&
-        rhsEquals(production, {"idlist", ":", "type", ";", "var_decl_list_tail"})) {
-        DeclNodeList decls;
-        auto node = std::make_shared<VarDeclNode>();
-        node->names = stringListValue(rhsValues[0]);
-        node->typeName = stringValue(rhsValues[2]);
-        decls.push_back(node);
-        appendDeclList(decls, declListValue(rhsValues[4]));
-        return decls;
-    }
-
-    if (lhs == "var_decl_list_tail" &&
-        rhsEquals(production, {"id", "idlist'", ":", "type", ";", "var_decl_list_tail"})) {
-        DeclNodeList decls;
-        auto node = std::make_shared<VarDeclNode>();
-        node->names.push_back(tokenLexeme(rhsValues[0]));
-        const auto tailNames = stringListValue(rhsValues[1]);
-        node->names.insert(node->names.end(), tailNames.begin(), tailNames.end());
-        node->typeName = stringValue(rhsValues[3]);
-        decls.push_back(node);
-        appendDeclList(decls, declListValue(rhsValues[5]));
-        return decls;
-    }
-
-    if (lhs == "var_decl_list_tail" && production.rhs.empty()) return DeclNodeList{};
-
-    if (lhs == "type" && rhsEquals(production, {"basic_type"})) return typeNameFromBasic(rhsValues[0]);
-    if (lhs == "type" && rhsEquals(production, {"array", "[", "period", "]", "of", "basic_type"})) {
-        return "array[" + stringValue(rhsValues[2]) + "] of " + typeNameFromBasic(rhsValues[5]);
-    }
-
-    if (lhs == "basic_type" && production.rhs.size() == 1) return tokenLexeme(rhsValues[0]);
-
-    if (lhs == "period" && rhsEquals(production, {"num", "..", "num", "period'"})) {
-        std::string range = tokenLexeme(rhsValues[0]) + ".." + tokenLexeme(rhsValues[2]);
-        const std::string tail = stringValue(rhsValues[3]);
-        if (!tail.empty()) range += tail;
-        return range;
-    }
-
-    if (lhs == "period'" && rhsEquals(production, {",", "num", "..", "num", "period'"})) {
-        std::string range = "," + tokenLexeme(rhsValues[1]) + ".." + tokenLexeme(rhsValues[3]);
-        const std::string tail = stringValue(rhsValues[4]);
-        if (!tail.empty()) range += tail;
-        return range;
-    }
-
-    if (lhs == "period'" && production.rhs.empty()) return std::string{};
-
-    if (lhs == "subprogram_declarations" && production.rhs.empty()) return DeclNodeList{};
-    if (lhs == "subprogram_declarations" &&
-        rhsEquals(production, {"subprogram", ";", "subprogram_declarations"})) {
-        DeclNodeList decls;
-        const auto sub = declValue(rhsValues[0]);
-        if (sub) decls.push_back(sub);
-        appendDeclList(decls, declListValue(rhsValues[2]));
-        return decls;
-    }
-
-    if (lhs == "subprogram") return DeclNodePtr{};
-
-    if (lhs == "subprogram_head" || lhs == "formal_parameter" || lhs == "parameter_list" ||
-        lhs == "parameter_list'" || lhs == "parameter" || lhs == "var_parameter" ||
-        lhs == "value_parameter") {
-        return std::monostate{};
-    }
-
-    if (lhs == "subprogram_body" &&
-        rhsEquals(production, {"const_declarations", "var_declarations", "compound_statement"})) {
-        auto block = std::make_shared<BlockNode>();
-        block->constDecls = declListValue(rhsValues[0]);
-        block->varDecls = declListValue(rhsValues[1]);
-        block->compoundStmt = stmtValue(rhsValues[2]);
-        return block;
-    }
-
-    if (lhs == "compound_statement" && rhsEquals(production, {"begin", "statement_list", "end"})) {
-        auto compound = std::make_shared<CompoundStmtNode>();
-        compound->statements = stmtListValue(rhsValues[1]);
-        return std::static_pointer_cast<StmtNode>(compound);
-    }
-
-    if (lhs == "statement_list" && rhsEquals(production, {"statement", "statement_list'"})) {
-        StmtNodeList list;
-        const auto first = stmtValue(rhsValues[0]);
-        if (first) list.push_back(first);
-        appendStmtList(list, stmtListValue(rhsValues[1]));
-        return list;
-    }
-
-    if (lhs == "statement_list'" && rhsEquals(production, {";", "statement", "statement_list'"})) {
-        StmtNodeList list;
-        const auto first = stmtValue(rhsValues[1]);
-        if (first) list.push_back(first);
-        appendStmtList(list, stmtListValue(rhsValues[2]));
-        return list;
-    }
-
-    if (lhs == "statement_list'" && production.rhs.empty()) return StmtNodeList{};
-    if (lhs == "statement" && production.rhs.empty()) {
-        return std::static_pointer_cast<StmtNode>(std::make_shared<EmptyStmtNode>());
-    }
-
-    if (lhs == "statement" && rhsEquals(production, {"id", "statement_id_tail"})) {
-        const std::string name = tokenLexeme(rhsValues[0]);
-        const StatementTail tail = statementTailValue(rhsValues[1]);
-
-        if (tail.kind == StatementTail::Kind::Call || tail.kind == StatementTail::Kind::BareCall) {
-            auto call = std::make_shared<CallStmtNode>();
-            call->callee = name;
-            call->arguments = tail.expressions;
-            return std::static_pointer_cast<StmtNode>(call);
+    auto it = actionTable.find(production.lhs);
+    if (it != actionTable.end()) {
+        for (auto& handler : it->second) {
+            SemanticValue result = handler(production, rhsValues);
+            if (!std::holds_alternative<std::monostate>(result)) {
+                return result;
+            }
         }
-
-        auto assign = std::make_shared<AssignStmtNode>();
-        auto target = std::make_shared<VariableExprNode>();
-        target->name = name;
-        if (tail.kind == StatementTail::Kind::IndexedAssign) {
-            target->indices = tail.expressions;
-        }
-        assign->target = std::static_pointer_cast<ExprNode>(target);
-        assign->value = tail.value;
-        return std::static_pointer_cast<StmtNode>(assign);
     }
-
-    if (lhs == "statement" && rhsEquals(production, {"begin", "statement_list", "end"})) {
-        auto compound = std::make_shared<CompoundStmtNode>();
-        compound->statements = stmtListValue(rhsValues[1]);
-        return std::static_pointer_cast<StmtNode>(compound);
-    }
-
-    if (lhs == "statement" && rhsEquals(production, {"if", "expression", "then", "statement", "else_part"})) {
-        auto node = std::make_shared<IfStmtNode>();
-        node->condition = exprValue(rhsValues[1]);
-        node->thenStmt = stmtValue(rhsValues[3]);
-        node->elseStmt = stmtValue(rhsValues[4]);
-        return std::static_pointer_cast<StmtNode>(node);
-    }
-
-    if (lhs == "statement" &&
-        rhsEquals(production, {"for", "id", "assignop", "expression", "to", "expression", "do", "statement"})) {
-        auto node = std::make_shared<ForStmtNode>();
-        node->iterator = tokenLexeme(rhsValues[1]);
-        node->startExpr = exprValue(rhsValues[3]);
-        node->endExpr = exprValue(rhsValues[5]);
-        node->body = stmtValue(rhsValues[7]);
-        return std::static_pointer_cast<StmtNode>(node);
-    }
-
-    if (lhs == "statement" && rhsEquals(production, {"read", "(", "variable_list", ")"})) {
-        auto node = std::make_shared<ReadStmtNode>();
-        node->variables = exprListValue(rhsValues[2]);
-        return std::static_pointer_cast<StmtNode>(node);
-    }
-
-    if (lhs == "statement" && rhsEquals(production, {"write", "(", "expression_list", ")"})) {
-        auto node = std::make_shared<WriteStmtNode>();
-        node->expressions = exprListValue(rhsValues[2]);
-        return std::static_pointer_cast<StmtNode>(node);
-    }
-
-    if (lhs == "statement_id_tail" && rhsEquals(production, {"assignop", "expression"})) {
-        StatementTail tail;
-        tail.kind = StatementTail::Kind::Assign;
-        tail.value = exprValue(rhsValues[1]);
-        return tail;
-    }
-
-    if (lhs == "statement_id_tail" &&
-        rhsEquals(production, {"[", "expression_list", "]", "assignop", "expression"})) {
-        StatementTail tail;
-        tail.kind = StatementTail::Kind::IndexedAssign;
-        tail.expressions = exprListValue(rhsValues[1]);
-        tail.value = exprValue(rhsValues[4]);
-        return tail;
-    }
-
-    if (lhs == "statement_id_tail" && rhsEquals(production, {"(", "expression_list", ")"})) {
-        StatementTail tail;
-        tail.kind = StatementTail::Kind::Call;
-        tail.expressions = exprListValue(rhsValues[1]);
-        return tail;
-    }
-
-    if (lhs == "statement_id_tail" && production.rhs.empty()) return StatementTail{};
-
-    if (lhs == "variable_list" && rhsEquals(production, {"variable", "variable_list'"})) {
-        ExprNodeList list;
-        const auto first = exprValue(rhsValues[0]);
-        if (first) list.push_back(first);
-        appendExprList(list, exprListValue(rhsValues[1]));
-        return list;
-    }
-
-    if (lhs == "variable_list'" && rhsEquals(production, {",", "variable", "variable_list'"})) {
-        ExprNodeList list;
-        const auto first = exprValue(rhsValues[1]);
-        if (first) list.push_back(first);
-        appendExprList(list, exprListValue(rhsValues[2]));
-        return list;
-    }
-
-    if (lhs == "variable_list'" && production.rhs.empty()) return ExprNodeList{};
-
-    if (lhs == "variable" && rhsEquals(production, {"id", "id_varpart"})) {
-        auto variable = std::make_shared<VariableExprNode>();
-        variable->name = tokenLexeme(rhsValues[0]);
-        variable->indices = exprListValue(rhsValues[1]);
-        return std::static_pointer_cast<ExprNode>(variable);
-    }
-
-    if (lhs == "id_varpart" && production.rhs.empty()) return ExprNodeList{};
-    if (lhs == "id_varpart" && rhsEquals(production, {"[", "expression_list", "]"})) {
-        return exprListValue(rhsValues[1]);
-    }
-
-    if (lhs == "else_part" && production.rhs.empty()) return StmtNodePtr{};
-    if (lhs == "else_part" && rhsEquals(production, {"else", "statement"})) {
-        return stmtValue(rhsValues[1]);
-    }
-
-    if (lhs == "expression_list" && rhsEquals(production, {"expression", "expression_list'"})) {
-        ExprNodeList list;
-        const auto first = exprValue(rhsValues[0]);
-        if (first) list.push_back(first);
-        appendExprList(list, exprListValue(rhsValues[1]));
-        return list;
-    }
-
-    if (lhs == "expression_list'" && rhsEquals(production, {",", "expression", "expression_list'"})) {
-        ExprNodeList list;
-        const auto first = exprValue(rhsValues[1]);
-        if (first) list.push_back(first);
-        appendExprList(list, exprListValue(rhsValues[2]));
-        return list;
-    }
-
-    if (lhs == "expression_list'" && production.rhs.empty()) return ExprNodeList{};
-
-    if (lhs == "expression" && rhsEquals(production, {"simple_expression", "expression_tail"})) {
-        auto left = exprValue(rhsValues[0]);
-        const auto tail = relTailValue(rhsValues[1]);
-        if (tail.op.empty()) return left;
-
-        auto binary = std::make_shared<BinaryExprNode>();
-        binary->op = tail.op;
-        binary->left = left;
-        binary->right = tail.rhs;
-        return std::static_pointer_cast<ExprNode>(binary);
-    }
-
-    if (lhs == "expression_tail" && rhsEquals(production, {"relop", "simple_expression"})) {
-        RelOpTail tail;
-        tail.op = tokenLexeme(rhsValues[0]);
-        tail.rhs = exprValue(rhsValues[1]);
-        return tail;
-    }
-
-    if (lhs == "expression_tail" && production.rhs.empty()) return RelOpTail{};
-
-    if (lhs == "simple_expression" && rhsEquals(production, {"term", "simple_expression'"})) {
-        return foldLeftAssociative(exprValue(rhsValues[0]), exprChainValue(rhsValues[1]));
-    }
-
-    if (lhs == "simple_expression'" &&
-        rhsEquals(production, {"addop", "term", "simple_expression'"})) {
-        ExprChain chain;
-        chain.items.push_back({tokenLexeme(rhsValues[0]), exprValue(rhsValues[1])});
-        const auto tail = exprChainValue(rhsValues[2]);
-        chain.items.insert(chain.items.end(), tail.items.begin(), tail.items.end());
-        return chain;
-    }
-
-    if (lhs == "simple_expression'" && production.rhs.empty()) return ExprChain{};
-
-    if (lhs == "term" && rhsEquals(production, {"factor", "term'"})) {
-        return foldLeftAssociative(exprValue(rhsValues[0]), exprChainValue(rhsValues[1]));
-    }
-
-    if (lhs == "term'" && rhsEquals(production, {"mulop", "factor", "term'"})) {
-        ExprChain chain;
-        chain.items.push_back({tokenLexeme(rhsValues[0]), exprValue(rhsValues[1])});
-        const auto tail = exprChainValue(rhsValues[2]);
-        chain.items.insert(chain.items.end(), tail.items.begin(), tail.items.end());
-        return chain;
-    }
-
-    if (lhs == "term'" && production.rhs.empty()) return ExprChain{};
-
-    if (lhs == "factor" && rhsEquals(production, {"num"})) {
-        auto literal = std::make_shared<LiteralExprNode>();
-        literal->literalType = "num";
-        literal->value = tokenLexeme(rhsValues[0]);
-        return std::static_pointer_cast<ExprNode>(literal);
-    }
-
-    if (lhs == "factor" && rhsEquals(production, {"id", "factor_id_tail"})) {
-        const std::string name = tokenLexeme(rhsValues[0]);
-        const FactorTail tail = factorTailValue(rhsValues[1]);
-
-        if (tail.kind == FactorTail::Kind::Call) {
-            auto call = std::make_shared<CallExprNode>();
-            call->callee = name;
-            call->arguments = tail.expressions;
-            return std::static_pointer_cast<ExprNode>(call);
-        }
-
-        auto variable = std::make_shared<VariableExprNode>();
-        variable->name = name;
-        if (tail.kind == FactorTail::Kind::Index) {
-            variable->indices = tail.expressions;
-        }
-        return std::static_pointer_cast<ExprNode>(variable);
-    }
-
-    if (lhs == "factor" && rhsEquals(production, {"(", "expression", ")"})) {
-        return exprValue(rhsValues[1]);
-    }
-
-    if (lhs == "factor" && rhsEquals(production, {"not", "factor"})) {
-        auto node = std::make_shared<UnaryExprNode>();
-        node->op = "not";
-        node->operand = exprValue(rhsValues[1]);
-        return std::static_pointer_cast<ExprNode>(node);
-    }
-
-    if (lhs == "factor" && rhsEquals(production, {"-", "factor"})) {
-        auto node = std::make_shared<UnaryExprNode>();
-        node->op = "-";
-        node->operand = exprValue(rhsValues[1]);
-        return std::static_pointer_cast<ExprNode>(node);
-    }
-
-    if (lhs == "factor_id_tail" && rhsEquals(production, {"[", "expression_list", "]"})) {
-        FactorTail tail;
-        tail.kind = FactorTail::Kind::Index;
-        tail.expressions = exprListValue(rhsValues[1]);
-        return tail;
-    }
-
-    if (lhs == "factor_id_tail" && rhsEquals(production, {"(", "expression_list", ")"})) {
-        FactorTail tail;
-        tail.kind = FactorTail::Kind::Call;
-        tail.expressions = exprListValue(rhsValues[1]);
-        return tail;
-    }
-
-    if (lhs == "factor_id_tail" && production.rhs.empty()) return FactorTail{};
-
     return std::monostate{};
+}
+
+// ---------------------------------------------------------------------------
+// Register all default semantic actions for the Pascal-S grammar.
+// Each non-terminal's rules are grouped into one handler function.
+// To extend: call parser.registerAction("new_nt", handler) before parse().
+// ---------------------------------------------------------------------------
+void Parser::registerDefaultActions() {
+
+    // --- programstruct ---
+    registerAction("programstruct", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (rhsEquals(p, {"program_head", ";", "program_body", "."})) {
+            auto prog = programValue(v[0]);
+            if (!prog) prog = std::make_shared<ProgramNode>();
+            prog->block = blockValue(v[2]);
+            return prog;
+        }
+        return std::monostate{};
+    });
+
+    // --- program_head ---
+    registerAction("program_head", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (rhsEquals(p, {"program", "id", "(", "idlist", ")"})) {
+            auto prog = std::make_shared<ProgramNode>();
+            prog->name = tokenLexeme(v[1]);
+            prog->parameters = stringListValue(v[3]);
+            return prog;
+        }
+        if (rhsEquals(p, {"program", "id", "program_head'"})) {
+            auto prog = std::make_shared<ProgramNode>();
+            prog->name = tokenLexeme(v[1]);
+            prog->parameters = stringListValue(v[2]);
+            return prog;
+        }
+        if (rhsEquals(p, {"program", "id"})) {
+            auto prog = std::make_shared<ProgramNode>();
+            prog->name = tokenLexeme(v[1]);
+            return prog;
+        }
+        return std::monostate{};
+    });
+
+    // --- program_head' ---
+    registerAction("program_head'", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (rhsEquals(p, {"(", "idlist", ")"})) return stringListValue(v[1]);
+        if (p.rhs.empty()) return std::vector<std::string>{};
+        return std::monostate{};
+    });
+
+    // --- program_body ---
+    registerAction("program_body", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (rhsEquals(p, {"const_declarations", "var_declarations",
+                          "subprogram_declarations", "compound_statement"})) {
+            auto block = std::make_shared<BlockNode>();
+            block->constDecls = declListValue(v[0]);
+            block->varDecls = declListValue(v[1]);
+            block->subprogramDecls = declListValue(v[2]);
+            block->compoundStmt = stmtValue(v[3]);
+            return block;
+        }
+        return std::monostate{};
+    });
+
+    // --- idlist / idlist' ---
+    registerAction("idlist", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (rhsEquals(p, {"id", "idlist'"})) {
+            std::vector<std::string> names{tokenLexeme(v[0])};
+            auto tail = stringListValue(v[1]);
+            names.insert(names.end(), tail.begin(), tail.end());
+            return names;
+        }
+        return std::monostate{};
+    });
+
+    registerAction("idlist'", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (rhsEquals(p, {",", "id", "idlist'"})) {
+            std::vector<std::string> names{tokenLexeme(v[1])};
+            auto tail = stringListValue(v[2]);
+            names.insert(names.end(), tail.begin(), tail.end());
+            return names;
+        }
+        if (p.rhs.empty()) return std::vector<std::string>{};
+        return std::monostate{};
+    });
+
+    // --- const_declarations ---
+    registerAction("const_declarations", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (p.rhs.empty()) return DeclNodeList{};
+        if (rhsEquals(p, {"const", "const_decl_list"})) return declListValue(v[1]);
+        return std::monostate{};
+    });
+
+    // --- const_decl_list ---
+    registerAction("const_decl_list", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (rhsEquals(p, {"id", "=", "const_value", ";", "const_decl_list_tail"})) {
+            DeclNodeList decls;
+            auto node = std::make_shared<ConstDeclNode>();
+            node->name = tokenLexeme(v[0]);
+            node->value = exprValue(v[2]);
+            decls.push_back(node);
+            appendDeclList(decls, declListValue(v[4]));
+            return decls;
+        }
+        return std::monostate{};
+    });
+
+    // --- const_decl_list_tail ---
+    registerAction("const_decl_list_tail", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (rhsEquals(p, {"id", "=", "const_value", ";", "const_decl_list_tail"})) {
+            DeclNodeList decls;
+            auto node = std::make_shared<ConstDeclNode>();
+            node->name = tokenLexeme(v[0]);
+            node->value = exprValue(v[2]);
+            decls.push_back(node);
+            appendDeclList(decls, declListValue(v[4]));
+            return decls;
+        }
+        if (p.rhs.empty()) return DeclNodeList{};
+        return std::monostate{};
+    });
+
+    // --- const_value ---
+    registerAction("const_value", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (rhsEquals(p, {"+", "num"})) {
+            auto lit = std::make_shared<LiteralExprNode>();
+            lit->literalType = "num";
+            lit->value = "+" + tokenLexeme(v[1]);
+            return std::static_pointer_cast<ExprNode>(lit);
+        }
+        if (rhsEquals(p, {"-", "num"})) {
+            auto lit = std::make_shared<LiteralExprNode>();
+            lit->literalType = "num";
+            lit->value = "-" + tokenLexeme(v[1]);
+            return std::static_pointer_cast<ExprNode>(lit);
+        }
+        if (rhsEquals(p, {"num"})) {
+            auto lit = std::make_shared<LiteralExprNode>();
+            lit->literalType = "num";
+            lit->value = tokenLexeme(v[0]);
+            return std::static_pointer_cast<ExprNode>(lit);
+        }
+        if (rhsEquals(p, {"letter"})) {
+            auto lit = std::make_shared<LiteralExprNode>();
+            lit->literalType = "char";
+            lit->value = tokenLexeme(v[0]);
+            return std::static_pointer_cast<ExprNode>(lit);
+        }
+        return std::monostate{};
+    });
+
+    // --- var_declarations ---
+    registerAction("var_declarations", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (p.rhs.empty()) return DeclNodeList{};
+        if (rhsEquals(p, {"var", "var_decl_list"})) return declListValue(v[1]);
+        return std::monostate{};
+    });
+
+    // --- var_decl_list ---
+    registerAction("var_decl_list", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (rhsEquals(p, {"idlist", ":", "type", ";", "var_decl_list_tail"})) {
+            DeclNodeList decls;
+            auto node = std::make_shared<VarDeclNode>();
+            node->names = stringListValue(v[0]);
+            node->typeName = stringValue(v[2]);
+            decls.push_back(node);
+            appendDeclList(decls, declListValue(v[4]));
+            return decls;
+        }
+        if (rhsEquals(p, {"id", "idlist'", ":", "type", ";", "var_decl_list_tail"})) {
+            DeclNodeList decls;
+            auto node = std::make_shared<VarDeclNode>();
+            node->names.push_back(tokenLexeme(v[0]));
+            auto tailNames = stringListValue(v[1]);
+            node->names.insert(node->names.end(), tailNames.begin(), tailNames.end());
+            node->typeName = stringValue(v[3]);
+            decls.push_back(node);
+            appendDeclList(decls, declListValue(v[5]));
+            return decls;
+        }
+        return std::monostate{};
+    });
+
+    // --- var_decl_list_tail ---
+    registerAction("var_decl_list_tail", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (rhsEquals(p, {"idlist", ":", "type", ";", "var_decl_list_tail"})) {
+            DeclNodeList decls;
+            auto node = std::make_shared<VarDeclNode>();
+            node->names = stringListValue(v[0]);
+            node->typeName = stringValue(v[2]);
+            decls.push_back(node);
+            appendDeclList(decls, declListValue(v[4]));
+            return decls;
+        }
+        if (rhsEquals(p, {"id", "idlist'", ":", "type", ";", "var_decl_list_tail"})) {
+            DeclNodeList decls;
+            auto node = std::make_shared<VarDeclNode>();
+            node->names.push_back(tokenLexeme(v[0]));
+            auto tailNames = stringListValue(v[1]);
+            node->names.insert(node->names.end(), tailNames.begin(), tailNames.end());
+            node->typeName = stringValue(v[3]);
+            decls.push_back(node);
+            appendDeclList(decls, declListValue(v[5]));
+            return decls;
+        }
+        if (p.rhs.empty()) return DeclNodeList{};
+        return std::monostate{};
+    });
+
+    // --- type ---
+    registerAction("type", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (rhsEquals(p, {"basic_type"})) return typeNameFromBasic(v[0]);
+        if (rhsEquals(p, {"array", "[", "period", "]", "of", "basic_type"})) {
+            return "array[" + stringValue(v[2]) + "] of " + typeNameFromBasic(v[5]);
+        }
+        return std::monostate{};
+    });
+
+    // --- basic_type ---
+    registerAction("basic_type", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (p.rhs.size() == 1) return tokenLexeme(v[0]);
+        return std::monostate{};
+    });
+
+    // --- period / period' ---
+    registerAction("period", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (rhsEquals(p, {"num", "..", "num", "period'"})) {
+            std::string range = tokenLexeme(v[0]) + ".." + tokenLexeme(v[2]);
+            auto tail = stringValue(v[3]);
+            if (!tail.empty()) range += tail;
+            return range;
+        }
+        return std::monostate{};
+    });
+
+    registerAction("period'", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (rhsEquals(p, {",", "num", "..", "num", "period'"})) {
+            std::string range = "," + tokenLexeme(v[1]) + ".." + tokenLexeme(v[3]);
+            auto tail = stringValue(v[4]);
+            if (!tail.empty()) range += tail;
+            return range;
+        }
+        if (p.rhs.empty()) return std::string{};
+        return std::monostate{};
+    });
+
+    // --- subprogram_declarations ---
+    registerAction("subprogram_declarations", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (p.rhs.empty()) return DeclNodeList{};
+        if (rhsEquals(p, {"subprogram", ";", "subprogram_declarations"})) {
+            DeclNodeList decls;
+            auto sub = declValue(v[0]);
+            if (sub) decls.push_back(sub);
+            appendDeclList(decls, declListValue(v[2]));
+            return decls;
+        }
+        return std::monostate{};
+    });
+
+    // --- subprogram (placeholder — not yet fully implemented) ---
+    registerAction("subprogram", [](const Production&, const std::vector<SemanticValue>&) -> SemanticValue {
+        return DeclNodePtr{};
+    });
+
+    // --- subprogram_head, formal_parameter, parameter_list, etc. ---
+    auto passthrough = [](const Production&, const std::vector<SemanticValue>&) -> SemanticValue {
+        return std::monostate{};
+    };
+    registerAction("subprogram_head", passthrough);
+    registerAction("formal_parameter", passthrough);
+    registerAction("parameter_list", passthrough);
+    registerAction("parameter_list'", passthrough);
+    registerAction("parameter", passthrough);
+    registerAction("var_parameter", passthrough);
+    registerAction("value_parameter", passthrough);
+
+    // --- subprogram_body ---
+    registerAction("subprogram_body", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (rhsEquals(p, {"const_declarations", "var_declarations", "compound_statement"})) {
+            auto block = std::make_shared<BlockNode>();
+            block->constDecls = declListValue(v[0]);
+            block->varDecls = declListValue(v[1]);
+            block->compoundStmt = stmtValue(v[2]);
+            return block;
+        }
+        return std::monostate{};
+    });
+
+    // --- compound_statement ---
+    registerAction("compound_statement", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (rhsEquals(p, {"begin", "statement_list", "end"})) {
+            auto compound = std::make_shared<CompoundStmtNode>();
+            compound->statements = stmtListValue(v[1]);
+            return std::static_pointer_cast<StmtNode>(compound);
+        }
+        return std::monostate{};
+    });
+
+    // --- statement_list ---
+    registerAction("statement_list", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (rhsEquals(p, {"statement", "statement_list'"})) {
+            StmtNodeList list;
+            auto first = stmtValue(v[0]);
+            if (first) list.push_back(first);
+            appendStmtList(list, stmtListValue(v[1]));
+            return list;
+        }
+        return std::monostate{};
+    });
+
+    // --- statement_list' ---
+    registerAction("statement_list'", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (rhsEquals(p, {";", "statement", "statement_list'"})) {
+            StmtNodeList list;
+            auto first = stmtValue(v[1]);
+            if (first) list.push_back(first);
+            appendStmtList(list, stmtListValue(v[2]));
+            return list;
+        }
+        if (p.rhs.empty()) return StmtNodeList{};
+        return std::monostate{};
+    });
+
+    // --- statement ---
+    registerAction("statement", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (p.rhs.empty()) {
+            return std::static_pointer_cast<StmtNode>(std::make_shared<EmptyStmtNode>());
+        }
+        if (rhsEquals(p, {"id", "statement_id_tail"})) {
+            const std::string name = tokenLexeme(v[0]);
+            const StatementTail tail = statementTailValue(v[1]);
+            if (tail.kind == StatementTail::Kind::Call || tail.kind == StatementTail::Kind::BareCall) {
+                auto call = std::make_shared<CallStmtNode>();
+                call->callee = name;
+                call->arguments = tail.expressions;
+                return std::static_pointer_cast<StmtNode>(call);
+            }
+            auto assign = std::make_shared<AssignStmtNode>();
+            auto target = std::make_shared<VariableExprNode>();
+            target->name = name;
+            if (tail.kind == StatementTail::Kind::IndexedAssign) {
+                target->indices = tail.expressions;
+            }
+            assign->target = std::static_pointer_cast<ExprNode>(target);
+            assign->value = tail.value;
+            return std::static_pointer_cast<StmtNode>(assign);
+        }
+        if (rhsEquals(p, {"begin", "statement_list", "end"})) {
+            auto compound = std::make_shared<CompoundStmtNode>();
+            compound->statements = stmtListValue(v[1]);
+            return std::static_pointer_cast<StmtNode>(compound);
+        }
+        if (rhsEquals(p, {"if", "expression", "then", "statement", "else_part"})) {
+            auto node = std::make_shared<IfStmtNode>();
+            node->condition = exprValue(v[1]);
+            node->thenStmt = stmtValue(v[3]);
+            node->elseStmt = stmtValue(v[4]);
+            return std::static_pointer_cast<StmtNode>(node);
+        }
+        if (rhsEquals(p, {"for", "id", "assignop", "expression", "to", "expression", "do", "statement"})) {
+            auto node = std::make_shared<ForStmtNode>();
+            node->iterator = tokenLexeme(v[1]);
+            node->startExpr = exprValue(v[3]);
+            node->endExpr = exprValue(v[5]);
+            node->body = stmtValue(v[7]);
+            return std::static_pointer_cast<StmtNode>(node);
+        }
+        if (rhsEquals(p, {"read", "(", "variable_list", ")"})) {
+            auto node = std::make_shared<ReadStmtNode>();
+            node->variables = exprListValue(v[2]);
+            return std::static_pointer_cast<StmtNode>(node);
+        }
+        if (rhsEquals(p, {"write", "(", "expression_list", ")"})) {
+            auto node = std::make_shared<WriteStmtNode>();
+            node->expressions = exprListValue(v[2]);
+            return std::static_pointer_cast<StmtNode>(node);
+        }
+        return std::monostate{};
+    });
+
+    // --- statement_id_tail ---
+    registerAction("statement_id_tail", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (rhsEquals(p, {"assignop", "expression"})) {
+            StatementTail tail;
+            tail.kind = StatementTail::Kind::Assign;
+            tail.value = exprValue(v[1]);
+            return tail;
+        }
+        if (rhsEquals(p, {"[", "expression_list", "]", "assignop", "expression"})) {
+            StatementTail tail;
+            tail.kind = StatementTail::Kind::IndexedAssign;
+            tail.expressions = exprListValue(v[1]);
+            tail.value = exprValue(v[4]);
+            return tail;
+        }
+        if (rhsEquals(p, {"(", "expression_list", ")"})) {
+            StatementTail tail;
+            tail.kind = StatementTail::Kind::Call;
+            tail.expressions = exprListValue(v[1]);
+            return tail;
+        }
+        if (p.rhs.empty()) return StatementTail{};
+        return std::monostate{};
+    });
+
+    // --- variable_list ---
+    registerAction("variable_list", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (rhsEquals(p, {"variable", "variable_list'"})) {
+            ExprNodeList list;
+            auto first = exprValue(v[0]);
+            if (first) list.push_back(first);
+            appendExprList(list, exprListValue(v[1]));
+            return list;
+        }
+        return std::monostate{};
+    });
+
+    registerAction("variable_list'", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (rhsEquals(p, {",", "variable", "variable_list'"})) {
+            ExprNodeList list;
+            auto first = exprValue(v[1]);
+            if (first) list.push_back(first);
+            appendExprList(list, exprListValue(v[2]));
+            return list;
+        }
+        if (p.rhs.empty()) return ExprNodeList{};
+        return std::monostate{};
+    });
+
+    // --- variable ---
+    registerAction("variable", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (rhsEquals(p, {"id", "id_varpart"})) {
+            auto variable = std::make_shared<VariableExprNode>();
+            variable->name = tokenLexeme(v[0]);
+            variable->indices = exprListValue(v[1]);
+            return std::static_pointer_cast<ExprNode>(variable);
+        }
+        return std::monostate{};
+    });
+
+    // --- id_varpart ---
+    registerAction("id_varpart", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (p.rhs.empty()) return ExprNodeList{};
+        if (rhsEquals(p, {"[", "expression_list", "]"})) return exprListValue(v[1]);
+        return std::monostate{};
+    });
+
+    // --- else_part ---
+    registerAction("else_part", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (p.rhs.empty()) return StmtNodePtr{};
+        if (rhsEquals(p, {"else", "statement"})) return stmtValue(v[1]);
+        return std::monostate{};
+    });
+
+    // --- expression_list ---
+    registerAction("expression_list", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (rhsEquals(p, {"expression", "expression_list'"})) {
+            ExprNodeList list;
+            auto first = exprValue(v[0]);
+            if (first) list.push_back(first);
+            appendExprList(list, exprListValue(v[1]));
+            return list;
+        }
+        return std::monostate{};
+    });
+
+    registerAction("expression_list'", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (rhsEquals(p, {",", "expression", "expression_list'"})) {
+            ExprNodeList list;
+            auto first = exprValue(v[1]);
+            if (first) list.push_back(first);
+            appendExprList(list, exprListValue(v[2]));
+            return list;
+        }
+        if (p.rhs.empty()) return ExprNodeList{};
+        return std::monostate{};
+    });
+
+    // --- expression ---
+    registerAction("expression", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (rhsEquals(p, {"simple_expression", "expression_tail"})) {
+            auto left = exprValue(v[0]);
+            auto tail = relTailValue(v[1]);
+            if (tail.op.empty()) return left;
+            auto binary = std::make_shared<BinaryExprNode>();
+            binary->op = tail.op;
+            binary->left = left;
+            binary->right = tail.rhs;
+            return std::static_pointer_cast<ExprNode>(binary);
+        }
+        return std::monostate{};
+    });
+
+    // --- expression_tail ---
+    registerAction("expression_tail", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (rhsEquals(p, {"relop", "simple_expression"})) {
+            RelOpTail tail;
+            tail.op = tokenLexeme(v[0]);
+            tail.rhs = exprValue(v[1]);
+            return tail;
+        }
+        if (p.rhs.empty()) return RelOpTail{};
+        return std::monostate{};
+    });
+
+    // --- simple_expression ---
+    registerAction("simple_expression", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (rhsEquals(p, {"term", "simple_expression'"})) {
+            return foldLeftAssociative(exprValue(v[0]), exprChainValue(v[1]));
+        }
+        return std::monostate{};
+    });
+
+    registerAction("simple_expression'", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (rhsEquals(p, {"addop", "term", "simple_expression'"})) {
+            ExprChain chain;
+            chain.items.push_back({tokenLexeme(v[0]), exprValue(v[1])});
+            auto tail = exprChainValue(v[2]);
+            chain.items.insert(chain.items.end(), tail.items.begin(), tail.items.end());
+            return chain;
+        }
+        if (p.rhs.empty()) return ExprChain{};
+        return std::monostate{};
+    });
+
+    // --- term ---
+    registerAction("term", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (rhsEquals(p, {"factor", "term'"})) {
+            return foldLeftAssociative(exprValue(v[0]), exprChainValue(v[1]));
+        }
+        return std::monostate{};
+    });
+
+    registerAction("term'", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (rhsEquals(p, {"mulop", "factor", "term'"})) {
+            ExprChain chain;
+            chain.items.push_back({tokenLexeme(v[0]), exprValue(v[1])});
+            auto tail = exprChainValue(v[2]);
+            chain.items.insert(chain.items.end(), tail.items.begin(), tail.items.end());
+            return chain;
+        }
+        if (p.rhs.empty()) return ExprChain{};
+        return std::monostate{};
+    });
+
+    // --- factor ---
+    registerAction("factor", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (rhsEquals(p, {"num"})) {
+            auto lit = std::make_shared<LiteralExprNode>();
+            lit->literalType = "num";
+            lit->value = tokenLexeme(v[0]);
+            return std::static_pointer_cast<ExprNode>(lit);
+        }
+        if (rhsEquals(p, {"id", "factor_id_tail"})) {
+            const std::string name = tokenLexeme(v[0]);
+            const FactorTail tail = factorTailValue(v[1]);
+            if (tail.kind == FactorTail::Kind::Call) {
+                auto call = std::make_shared<CallExprNode>();
+                call->callee = name;
+                call->arguments = tail.expressions;
+                return std::static_pointer_cast<ExprNode>(call);
+            }
+            auto variable = std::make_shared<VariableExprNode>();
+            variable->name = name;
+            if (tail.kind == FactorTail::Kind::Index) {
+                variable->indices = tail.expressions;
+            }
+            return std::static_pointer_cast<ExprNode>(variable);
+        }
+        if (rhsEquals(p, {"(", "expression", ")"})) return exprValue(v[1]);
+        if (rhsEquals(p, {"not", "factor"})) {
+            auto node = std::make_shared<UnaryExprNode>();
+            node->op = "not";
+            node->operand = exprValue(v[1]);
+            return std::static_pointer_cast<ExprNode>(node);
+        }
+        if (rhsEquals(p, {"-", "factor"})) {
+            auto node = std::make_shared<UnaryExprNode>();
+            node->op = "-";
+            node->operand = exprValue(v[1]);
+            return std::static_pointer_cast<ExprNode>(node);
+        }
+        return std::monostate{};
+    });
+
+    // --- factor_id_tail ---
+    registerAction("factor_id_tail", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (rhsEquals(p, {"[", "expression_list", "]"})) {
+            FactorTail tail;
+            tail.kind = FactorTail::Kind::Index;
+            tail.expressions = exprListValue(v[1]);
+            return tail;
+        }
+        if (rhsEquals(p, {"(", "expression_list", ")"})) {
+            FactorTail tail;
+            tail.kind = FactorTail::Kind::Call;
+            tail.expressions = exprListValue(v[1]);
+            return tail;
+        }
+        if (p.rhs.empty()) return FactorTail{};
+        return std::monostate{};
+    });
 }
 
 void Parser::printParseProcess(std::ostream& os) const {

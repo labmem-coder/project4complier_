@@ -87,10 +87,6 @@ bool Lexer::isAtEnd() const {
 // ---------------------------------------------------------------------------
 // Error / token helpers
 // ---------------------------------------------------------------------------
-void Lexer::addToken(TokenType type, const std::string& lexeme, int startLine, int startCol) {
-    result.push_back({type, lexeme, startLine, startCol});
-}
-
 void Lexer::addError(int errLine, int errCol, const std::string& msg) {
     errors.push_back({errLine, errCol, msg});
 }
@@ -201,7 +197,7 @@ void Lexer::skipWhitespaceAndComments() {
 // ---------------------------------------------------------------------------
 // Number scanning: integer or real (e.g. 123, 3.14)
 // ---------------------------------------------------------------------------
-void Lexer::scanNumber(int startLine, int startCol) {
+Token Lexer::scanNumber(int startLine, int startCol) {
     size_t start = pos;
     while (!isAtEnd() && isDigit(peek())) advance();
 
@@ -211,7 +207,7 @@ void Lexer::scanNumber(int startLine, int startCol) {
         addError(startLine, startCol,
                  "Invalid identifier '" + source.substr(start, pos - start) +
                  "': identifiers cannot start with a digit");
-        return;
+        return {TokenType::END_OF_FILE, "", startLine, startCol};
     }
 
     // Check for real number (decimal point not followed by another dot => not '..')
@@ -231,17 +227,17 @@ void Lexer::scanNumber(int startLine, int startCol) {
         addError(startLine, startCol,
                  "Invalid number format '" + source.substr(start, pos - start) +
                  "': multiple decimal points");
-        return;
+        return {TokenType::END_OF_FILE, "", startLine, startCol};
     }
 
     std::string lexeme = source.substr(start, pos - start);
-    addToken(TokenType::NUM, lexeme, startLine, startCol);
+    return {TokenType::NUM, lexeme, startLine, startCol};
 }
 
 // ---------------------------------------------------------------------------
 // Identifier / keyword scanning
 // ---------------------------------------------------------------------------
-void Lexer::scanIdentifierOrKeyword(int startLine, int startCol) {
+Token Lexer::scanIdentifierOrKeyword(int startLine, int startCol) {
     size_t start = pos;
     while (!isAtEnd() && isAlphaNumeric(peek())) advance();
 
@@ -256,124 +252,103 @@ void Lexer::scanIdentifierOrKeyword(int startLine, int startCol) {
     auto it = kw.find(lower);
     if (it != kw.end()) {
         // Store keyword in its canonical lowercase form
-        addToken(it->second, lower, startLine, startCol);
-    } else {
-        addToken(TokenType::ID, lexeme, startLine, startCol);
+        return {it->second, lower, startLine, startCol};
     }
+    return {TokenType::ID, lexeme, startLine, startCol};
 }
 
 // ---------------------------------------------------------------------------
 // Character literal: 'x'
 // ---------------------------------------------------------------------------
-void Lexer::scanCharLiteral(int startLine, int startCol) {
+Token Lexer::scanCharLiteral(int startLine, int startCol) {
     advance(); // consume opening '\''
     if (isAtEnd()) {
         addError(startLine, startCol, "Unterminated character literal");
-        return;
+        return {TokenType::END_OF_FILE, "", startLine, startCol};
     }
     char ch = advance(); // the character
     if (isAtEnd() || peek() != '\'') {
         addError(startLine, startCol, "Unterminated character literal, expected closing '\\''");
-        return;
+        return {TokenType::END_OF_FILE, "", startLine, startCol};
     }
     advance(); // consume closing '\''
     // Store as 'x' (with quotes) — convenient for C code generation
     std::string lexeme = std::string("'") + ch + "'";
-    addToken(TokenType::LETTER, lexeme, startLine, startCol);
+    return {TokenType::LETTER, lexeme, startLine, startCol};
 }
 
 // ---------------------------------------------------------------------------
 // Main scan loop
 // ---------------------------------------------------------------------------
-void Lexer::scanToken() {
+Token Lexer::scanToken() {
     int startLine = line;
     int startCol = column;
     char c = peek();
 
     // Numbers
-    if (isDigit(c)) {
-        scanNumber(startLine, startCol);
-        return;
-    }
+    if (isDigit(c)) return scanNumber(startLine, startCol);
 
     // Identifiers and keywords
-    if (isAlpha(c)) {
-        scanIdentifierOrKeyword(startLine, startCol);
-        return;
-    }
+    if (isAlpha(c)) return scanIdentifierOrKeyword(startLine, startCol);
 
     // Character literal
-    if (c == '\'') {
-        scanCharLiteral(startLine, startCol);
-        return;
-    }
+    if (c == '\'') return scanCharLiteral(startLine, startCol);
 
     // Operators and delimiters
     advance(); // consume the character
 
     switch (c) {
-        case '+': addToken(TokenType::PLUS,      "+",  startLine, startCol); break;
-        case '-': addToken(TokenType::MINUS,     "-",  startLine, startCol); break;
-        case '*': addToken(TokenType::MULTIPLY,  "*",  startLine, startCol); break;
-        case '/': addToken(TokenType::DIVIDE,    "/",  startLine, startCol); break;
-        case '=': addToken(TokenType::EQ,        "=",  startLine, startCol); break;
+        case '+': return {TokenType::PLUS,      "+",  startLine, startCol};
+        case '-': return {TokenType::MINUS,     "-",  startLine, startCol};
+        case '*': return {TokenType::MULTIPLY,  "*",  startLine, startCol};
+        case '/': return {TokenType::DIVIDE,    "/",  startLine, startCol};
+        case '=': return {TokenType::EQ,        "=",  startLine, startCol};
         case '(':
             pushBracket('(', startLine, startCol);
-            addToken(TokenType::LPAREN, "(", startLine, startCol);
-            break;
+            return {TokenType::LPAREN, "(", startLine, startCol};
         case ')':
             popBracket(')', startLine, startCol);
-            addToken(TokenType::RPAREN, ")", startLine, startCol);
-            break;
+            return {TokenType::RPAREN, ")", startLine, startCol};
         case '[':
             pushBracket('[', startLine, startCol);
-            addToken(TokenType::LBRACKET, "[", startLine, startCol);
-            break;
+            return {TokenType::LBRACKET, "[", startLine, startCol};
         case ']':
             popBracket(']', startLine, startCol);
-            addToken(TokenType::RBRACKET, "]", startLine, startCol);
-            break;
-        case ',': addToken(TokenType::COMMA,     ",",  startLine, startCol); break;
-        case ';': addToken(TokenType::SEMICOLON, ";",  startLine, startCol); break;
+            return {TokenType::RBRACKET, "]", startLine, startCol};
+        case ',': return {TokenType::COMMA,     ",",  startLine, startCol};
+        case ';': return {TokenType::SEMICOLON, ";",  startLine, startCol};
 
         case ':':
             if (!isAtEnd() && peek() == '=') {
                 advance(); // consume '='
-                addToken(TokenType::ASSIGN, ":=", startLine, startCol);
-            } else {
-                addToken(TokenType::COLON, ":", startLine, startCol);
+                return {TokenType::ASSIGN, ":=", startLine, startCol};
             }
-            break;
+            return {TokenType::COLON, ":", startLine, startCol};
 
         case '.':
             if (!isAtEnd() && peek() == '.') {
                 advance(); // consume second '.'
-                addToken(TokenType::DOTDOT, "..", startLine, startCol);
-            } else {
-                addToken(TokenType::DOT, ".", startLine, startCol);
+                return {TokenType::DOTDOT, "..", startLine, startCol};
             }
-            break;
+            return {TokenType::DOT, ".", startLine, startCol};
 
         case '<':
             if (!isAtEnd() && peek() == '=') {
                 advance();
-                addToken(TokenType::LE, "<=", startLine, startCol);
-            } else if (!isAtEnd() && peek() == '>') {
-                advance();
-                addToken(TokenType::NE, "<>", startLine, startCol);
-            } else {
-                addToken(TokenType::LT, "<", startLine, startCol);
+                return {TokenType::LE, "<=", startLine, startCol};
             }
-            break;
+            if (!isAtEnd() && peek() == '>') {
+                advance();
+                return {TokenType::NE, "<>", startLine, startCol};
+            }
+            return {TokenType::LT, "<", startLine, startCol};
 
         case '>':
             if (!isAtEnd() && peek() == '=') {
                 advance();
-                addToken(TokenType::GE, ">=", startLine, startCol);
-            } else {
-                addToken(TokenType::GT, ">", startLine, startCol);
+                return {TokenType::GE, ">=", startLine, startCol};
             }
-            break;
+            return {TokenType::GT, ">", startLine, startCol};
 
         default:
             if (static_cast<unsigned char>(c) >= 128) {
@@ -383,15 +358,41 @@ void Lexer::scanToken() {
                 addError(startLine, startCol,
                          std::string("Unexpected character '") + c + "'");
             }
-            break;
+            return {TokenType::END_OF_FILE, "", startLine, startCol};
     }
 }
 
 // ---------------------------------------------------------------------------
-// Public: tokenize the whole source
+// Public: on-demand tokenization — returns one token per call
+// This is the core tokenization method. All other public methods use it.
+// ---------------------------------------------------------------------------
+Token Lexer::nextToken() {
+    if (eofEmitted) {
+        return {TokenType::END_OF_FILE, "EOF", line, column};
+    }
+
+    while (!isAtEnd()) {
+        skipWhitespaceAndComments();
+        if (!isAtEnd()) {
+            Token tok = scanToken();
+            if (tok.type != TokenType::END_OF_FILE) {
+                return tok;
+            }
+            // scanToken returned sentinel (error, no token) — keep trying
+        }
+    }
+
+    // Source exhausted — report unclosed brackets once, then emit EOF
+    reportUnclosedBrackets();
+    eofEmitted = true;
+    return {TokenType::END_OF_FILE, "EOF", line, column};
+}
+
+// ---------------------------------------------------------------------------
+// Public: tokenize the whole source (convenience, calls nextToken internally)
 // ---------------------------------------------------------------------------
 std::vector<Token> Lexer::tokenize() {
-    result.clear();
+    // Reset state so tokenize() can be called on a fresh or reused Lexer
     errors.clear();
     pos = 0;
     line = 1;
@@ -399,19 +400,15 @@ std::vector<Token> Lexer::tokenize() {
     bracketStack.clear();
     bracketLines.clear();
     bracketCols.clear();
+    eofEmitted = false;
 
-    while (!isAtEnd()) {
-        skipWhitespaceAndComments();
-        if (!isAtEnd()) {
-            scanToken();
-        }
+    std::vector<Token> tokens;
+    while (true) {
+        Token tok = nextToken();
+        tokens.push_back(tok);
+        if (tok.type == TokenType::END_OF_FILE) break;
     }
-
-    reportUnclosedBrackets();
-
-    // Append EOF token
-    addToken(TokenType::END_OF_FILE, "EOF", line, column);
-    return result;
+    return tokens;
 }
 
 // ---------------------------------------------------------------------------

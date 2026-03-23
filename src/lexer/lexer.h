@@ -18,6 +18,11 @@ public:
     explicit Lexer(const std::string& source);
 
     std::vector<Token> tokenize();
+
+    // On-demand tokenization: returns the next token each time it is called.
+    // Returns END_OF_FILE token when source is exhausted.
+    Token nextToken();
+
     const std::vector<LexerError>& getErrors() const { return errors; }
     bool hasErrors() const { return !errors.empty(); }
 
@@ -26,7 +31,6 @@ private:
     size_t pos;
     int line;
     int column;
-    std::vector<Token> result;
     std::vector<LexerError> errors;
 
     char peek() const;
@@ -37,13 +41,15 @@ private:
     bool skipBraceComment();
     bool skipParenStarComment();
 
-    void addToken(TokenType type, const std::string& lexeme, int startLine, int startCol);
     void addError(int errLine, int errCol, const std::string& msg);
 
-    void scanToken();
-    void scanNumber(int startLine, int startCol);
-    void scanIdentifierOrKeyword(int startLine, int startCol);
-    void scanCharLiteral(int startLine, int startCol);
+    // Each scan method returns a Token directly.
+    // Returns END_OF_FILE with empty lexeme as sentinel when only an error was produced.
+    Token scanToken();
+    Token scanNumber(int startLine, int startCol);
+    Token scanIdentifierOrKeyword(int startLine, int startCol);
+    Token scanCharLiteral(int startLine, int startCol);
+
     void pushBracket(char bracket, int bracketLine, int bracketCol);
     void popBracket(char closingBracket, int closingLine, int closingCol);
     void reportUnclosedBrackets();
@@ -57,6 +63,8 @@ private:
     std::vector<char> bracketStack;
     std::vector<int> bracketLines;
     std::vector<int> bracketCols;
+
+    bool eofEmitted = false;
 };
 
 // Convenience: tokenize a Pascal-S source file, returns tokens (with EOF appended)

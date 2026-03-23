@@ -1,5 +1,6 @@
 #include "grammar.h"
 #include "parser.h"
+#include "lexer.h"
 #include "token.h"
 #include "ast.h"
 #include <cassert>
@@ -71,16 +72,18 @@ static ParseResult lexAndParse(const std::string& source) {
     ParseResult result;
     Grammar& g = getGrammar();
 
-    // Parser lexes internally via Parser(grammar, source)
-    Parser parser(g, source);
-
-    result.lexErrors = parser.getLexerErrors();
-    if (parser.hasLexerErrors()) {
-        result.success = false;
-        return result;
-    }
+    // On-demand lexing: create Lexer, pass to Parser
+    Lexer lexer(source);
+    Parser parser(g, lexer);
 
     result.success = parser.parse();
+
+    // Collect lexer errors accumulated during on-demand tokenization
+    result.lexErrors.assign(lexer.getErrors().begin(), lexer.getErrors().end());
+    if (lexer.hasErrors()) {
+        result.success = false;
+    }
+
     result.ast = parser.getASTRoot();
     result.errors = parser.getErrors();
     return result;
