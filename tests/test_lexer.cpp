@@ -51,27 +51,29 @@ static int passedTests = 0;
 static void testKeywords() {
     TEST("Keywords");
     auto tokens = tokenizeSource("program var const procedure function begin end "
-                                 "if then else for to do read write while repeat until "
-                                 "integer real boolean char array of not div mod and or");
+                                 "if then else for to downto do read write while repeat until "
+                                 "integer real boolean char array of not case break continue record "
+                                 "div mod and or");
     // Last token is EOF
     EXPECT_EQ(tokens.back().type, TokenType::END_OF_FILE);
 
-    // Check all keywords in order (27 keywords + EOF = 28 tokens)
+    // Check all keywords in order
     TokenType expected[] = {
         TokenType::PROGRAM, TokenType::VAR, TokenType::CONST,
         TokenType::PROCEDURE, TokenType::FUNCTION,
         TokenType::BEGIN, TokenType::END,
         TokenType::IF, TokenType::THEN, TokenType::ELSE,
-        TokenType::FOR, TokenType::TO, TokenType::DO,
+        TokenType::FOR, TokenType::TO, TokenType::DOWNTO, TokenType::DO,
         TokenType::READ, TokenType::WRITE,
         TokenType::WHILE, TokenType::REPEAT, TokenType::UNTIL,
         TokenType::INTEGER_KW, TokenType::REAL_KW, TokenType::BOOLEAN_KW, TokenType::CHAR_KW,
         TokenType::ARRAY, TokenType::OF, TokenType::NOT,
+        TokenType::CASE, TokenType::BREAK, TokenType::CONTINUE, TokenType::RECORD,
         TokenType::DIV_KW, TokenType::MOD, TokenType::AND_KW, TokenType::OR_KW,
         TokenType::END_OF_FILE
     };
-    EXPECT_EQ(tokens.size(), size_t(30));
-    for (size_t i = 0; i < 30; ++i) {
+    EXPECT_EQ(tokens.size(), size_t(35));
+    for (size_t i = 0; i < 35; ++i) {
         EXPECT_EQ(tokens[i].type, expected[i]);
     }
     PASS();
@@ -200,6 +202,25 @@ static void testParenStarComment() {
     EXPECT_EQ(tokens.size(), size_t(3)); // a, b, EOF
     EXPECT_EQ(tokens[0].type, TokenType::ID);
     EXPECT_EQ(tokens[1].type, TokenType::ID);
+    PASS();
+}
+
+static void testStringLiteral() {
+    TEST("String literals");
+    auto tokens = tokenizeSource("'Hello, world!'");
+    EXPECT_EQ(tokens[0].type, TokenType::STRING);
+    EXPECT_EQ(tokens[0].lexeme, std::string("'Hello, world!'"));
+    PASS();
+}
+
+static void testSlashSlashComment() {
+    TEST("Line comments // ...");
+    auto tokens = tokenizeSource("x // this is a comment\ny");
+    EXPECT_EQ(tokens.size(), size_t(3)); // x, y, EOF
+    EXPECT_EQ(tokens[0].type, TokenType::ID);
+    EXPECT_EQ(tokens[0].lexeme, std::string("x"));
+    EXPECT_EQ(tokens[1].type, TokenType::ID);
+    EXPECT_EQ(tokens[1].lexeme, std::string("y"));
     PASS();
 }
 
@@ -435,10 +456,12 @@ int main(int argc, char* argv[]) {
     testRealNumbers();
     testDotDotNotReal();
     testCharLiteral();
+    testStringLiteral();
     testOperators();
     testDelimiters();
     testBraceComment();
     testParenStarComment();
+    testSlashSlashComment();
     testLineAndColumn();
     testUnterminatedComment();
     testUnexpectedCharacter();

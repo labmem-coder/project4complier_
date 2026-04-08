@@ -3,6 +3,7 @@
 
 #include "symbol_table.h"
 #include "ast.h"
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -47,6 +48,10 @@ public:
     void visitCallStmt(CallStmtNode& node) override;
     void visitIfStmt(IfStmtNode& node) override;
     void visitForStmt(ForStmtNode& node) override;
+    void visitWhileStmt(WhileStmtNode& node) override;
+    void visitCaseStmt(CaseStmtNode& node) override;
+    void visitBreakStmt(BreakStmtNode& node) override;
+    void visitContinueStmt(ContinueStmtNode& node) override;
     void visitReadStmt(ReadStmtNode& node) override;
     void visitWriteStmt(WriteStmtNode& node) override;
     void visitEmptyStmt(EmptyStmtNode& node) override;
@@ -60,8 +65,13 @@ private:
     SymbolTable symTable_;
     std::vector<SemanticError> errors_;
     std::string currentFunction_;   // name of the enclosing function (for return-value assignments)
+    int loopDepth_ = 0;
+    int caseDepth_ = 0;
+    std::vector<bool> functionAssignedStack_;
 
     void addError(const std::string& msg);
+    void markCurrentFunctionAssigned();
+    std::optional<std::string> constantValueKey(ExprNode* expr) const;
 
     // Type inference: determine the result type of an expression subtree.
     TypeInfo inferType(ExprNode* expr);

@@ -555,11 +555,17 @@ Grammar buildPascalSGrammar() {
 
     g.addProduction("type", split("basic_type"));
     g.addProduction("type", split("array [ period ] of basic_type"));
+    g.addProduction("type", split("record record_field_decl_list end"));
 
     g.addProduction("basic_type", split("integer"));
     g.addProduction("basic_type", split("real"));
     g.addProduction("basic_type", split("boolean"));
     g.addProduction("basic_type", split("char"));
+    g.addProduction("basic_type", split("string_kw"));
+
+    g.addProduction("record_field_decl_list", split("idlist : type ; record_field_decl_list_tail"));
+    g.addProduction("record_field_decl_list_tail", split("idlist : type ; record_field_decl_list_tail"));
+    g.addProduction("record_field_decl_list_tail", {});
 
     // period -> digits .. digits period'
     // period' -> , digits .. digits period' | ε
@@ -628,13 +634,29 @@ Grammar buildPascalSGrammar() {
     g.addProduction("statement", split("id statement_id_tail"));
     g.addProduction("statement", split("begin statement_list end"));
     g.addProduction("statement", split("if expression then statement else_part"));
-    g.addProduction("statement", split("for id assignop expression to expression do statement"));
+    g.addProduction("statement", split("for id assignop expression for_direction expression do statement"));
+    g.addProduction("statement", split("while expression do statement"));
+    g.addProduction("statement", split("case expression of case_branch_list end"));
+    g.addProduction("statement", split("break"));
+    g.addProduction("statement", split("continue"));
     g.addProduction("statement", split("read ( variable_list )"));
     g.addProduction("statement", split("write ( expression_list )"));
 
+    g.addProduction("for_direction", split("to"));
+    g.addProduction("for_direction", split("downto"));
+
+    g.addProduction("case_branch_list", split("case_branch case_branch_list'"));
+    g.addProduction("case_branch_list'", split("; case_branch case_branch_list'"));
+    g.addProduction("case_branch_list'", split(";"));
+    g.addProduction("case_branch_list'", {}); // 蔚
+    g.addProduction("case_branch", split("case_label_list : statement"));
+    g.addProduction("case_label_list", split("const_value case_label_list'"));
+    g.addProduction("case_label_list'", split(", const_value case_label_list'"));
+    g.addProduction("case_label_list'", {}); // 蔚
+
     // statement_id_tail handles the ambiguity of id starting variable/func_id/procedure_call
-    g.addProduction("statement_id_tail", split("assignop expression"));          // simple assignment or func_id assign
-    g.addProduction("statement_id_tail", split("[ expression_list ] assignop expression")); // array variable assign
+    g.addProduction("statement_access_tail", split("id_varpart assignop expression"));
+    g.addProduction("statement_id_tail", split("statement_access_tail"));
     g.addProduction("statement_id_tail", split("( expression_list )"));          // procedure call with args
     g.addProduction("statement_id_tail", {}); // ε -- bare procedure call (just id)
 
@@ -654,6 +676,7 @@ Grammar buildPascalSGrammar() {
 
     // expression_list -> expression expression_list'
     // expression_list' -> , expression expression_list' | ε
+    g.addProduction("expression_list", {}); // 蔚
     g.addProduction("expression_list", split("expression expression_list'"));
     g.addProduction("expression_list'", split(", expression expression_list'"));
     g.addProduction("expression_list'", {}); // ε
@@ -683,6 +706,8 @@ Grammar buildPascalSGrammar() {
     // factor_id_tail -> id_varpart | ( expression_list )
     // id_varpart -> ε | [ expression_list ]
     g.addProduction("factor", split("num"));
+    g.addProduction("factor", split("string"));
+    g.addProduction("factor", split("letter"));
     g.addProduction("factor", split("id factor_id_tail"));
     g.addProduction("factor", split("( expression )"));
     g.addProduction("factor", split("not factor"));

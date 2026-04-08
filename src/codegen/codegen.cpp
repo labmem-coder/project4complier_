@@ -23,6 +23,7 @@ std::string CCodeGenerator::pascalTypeToCType(const std::string& pascalType) con
     if (pascalType == "real")    return "double";
     if (pascalType == "boolean") return "int";
     if (pascalType == "char")    return "char";
+    if (pascalType == "string")  return "const char*";
     return "int";  // fallback
 }
 
@@ -34,6 +35,7 @@ std::string CCodeGenerator::formatSpecifier(const TypeInfo& ti, bool forScanf) c
     if (ti.baseType == "integer" || ti.baseType == "boolean") return "%d";
     if (ti.baseType == "real")    return forScanf ? "%lf" : "%f";
     if (ti.baseType == "char")    return "%c";
+    if (ti.baseType == "string")  return "%s";
     return "%d";
 }
 
@@ -48,6 +50,9 @@ TypeInfo CCodeGenerator::inferType(ExprNode* expr) {
             auto* ve = static_cast<VariableExprNode*>(expr);
             Symbol* sym = symTable_.lookup(ve->name);
             if (!sym) return TypeInfo::makeSimple("integer");
+            if (sym->kind == SymbolKind::Function && ve->indices.empty()) {
+                return TypeInfo::makeSimple(sym->returnType);
+            }
             if (sym->type.isArray() && !ve->indices.empty())
                 return TypeInfo::makeSimple(sym->type.elementType);
             return sym->type;
@@ -62,6 +67,8 @@ TypeInfo CCodeGenerator::inferType(ExprNode* expr) {
             if (le->literalType == "real") return TypeInfo::makeSimple("real");
             if (le->literalType == "char" || le->literalType == "letter")
                 return TypeInfo::makeSimple("char");
+            if (le->literalType == "string")
+                return TypeInfo::makeSimple("string");
             return TypeInfo::makeSimple("integer");
         }
         case ASTNodeKind::UnaryExpr: {
@@ -238,14 +245,19 @@ void CCodeGenerator::visitVarDecl(VarDeclNode& node) {
         }
     } else {
         std::string cType = pascalTypeToCType(ti.baseType);
-        // Group names: int a, b, c;
-        emitIndent();
-        emit(cType + " ");
-        for (size_t i = 0; i < node.names.size(); ++i) {
-            if (i > 0) emit(", ");
-            emit(node.names[i]);
+        if (ti.baseType == "string") {
+            for (auto& name : node.names) {
+                emitLine(cType + " " + name + ";");
+            }
+        } else {
+            emitIndent();
+            emit(cType + " ");
+            for (size_t i = 0; i < node.names.size(); ++i) {
+                if (i > 0) emit(", ");
+                emit(node.names[i]);
+            }
+            emit(";\n");
         }
-        emit(";\n");
     }
 }
 
@@ -514,6 +526,62 @@ void CCodeGenerator::visitForStmt(ForStmtNode& node) {
     }
 }
 
+void CCodeGenerator::visitWhileStmt(WhileStmtNode& node) {
+    emitIndent();
+    emit("while (");
+    if (node.condition) emitExpr(node.condition.get());
+    emit(") ");
+
+    if (node.body) {
+        auto* cs = dynamic_cast<CompoundStmtNode*>(node.body.get());
+        if (cs) {
+            emit("{\n");
+            indent_++;
+            for (auto& s : cs->statements) if (s) s->accept(*this);
+            indent_--;
+            emitLine("}");
+        } else {
+            emit("{\n");
+            indent_++;
+            node.body->accept(*this);
+            indent_--;
+            emitLine("}");
+        }
+    } else {
+        emit("{ }\n");
+    }
+}
+
+void CCodeGenerator::visitCaseStmt(CaseStmtNode& node) {
+    emitIndent();
+    emit("switch (");
+    if (node.expression) emitExpr(node.expression.get());
+    emit(") {\n");
+    indent_++;
+    for (auto& branch : node.branches) {
+        for (auto& label : branch.labels) {
+            emitIndent();
+            emit("case ");
+            if (label) emitExpr(label.get());
+            emit(":\n");
+        }
+        indent_++;
+        if (branch.statement) branch.statement->accept(*this);
+        emitLine("break;");
+        indent_--;
+    }
+    indent_--;
+    emitLine("}");
+}
+
+void CCodeGenerator::visitBreakStmt(BreakStmtNode& /*node*/) {
+    emitLine("break;");
+}
+
+void CCodeGenerator::visitContinueStmt(ContinueStmtNode& /*node*/) {
+    emitLine("continue;");
+}
+
 void CCodeGenerator::visitReadStmt(ReadStmtNode& node) {
     emitIndent();
     emit("scanf(\"");
@@ -562,6 +630,10 @@ void CCodeGenerator::visitVariableExpr(VariableExprNode& node) {
     }
 
     Symbol* sym = symTable_.lookup(node.name);
+    if (sym && sym->kind == SymbolKind::Function && node.indices.empty()) {
+        emit(node.name + "()");
+        return;
+    }
     // If parameter passed by reference, dereference
     if (sym && sym->kind == SymbolKind::Parameter && sym->byReference) {
         if (node.indices.empty()) {
@@ -573,6 +645,18 @@ void CCodeGenerator::visitVariableExpr(VariableExprNode& node) {
 }
 
 void CCodeGenerator::visitLiteralExpr(LiteralExprNode& node) {
+    if (node.literalType == "string" && node.value.size() >= 2 &&
+        node.value.front() == '\'' && node.value.back() == '\'') {
+        std::string content = node.value.substr(1, node.value.size() - 2);
+        std::string cString = "\"";
+        for (char ch : content) {
+            if (ch == '\\' || ch == '"') cString.push_back('\\');
+            cString.push_back(ch);
+        }
+        cString.push_back('"');
+        emit(cString);
+        return;
+    }
     emit(node.value);
 }
 

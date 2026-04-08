@@ -32,14 +32,23 @@ struct FactorTail {
     enum class Kind { None, Index, Call };
     Kind kind = Kind::None;
     ExprNodeList expressions;
+    std::vector<std::string> fields;
 };
 
 struct StatementTail {
     enum class Kind { Assign, IndexedAssign, Call, BareCall };
     Kind kind = Kind::BareCall;
     ExprNodeList expressions;
+    std::vector<std::string> fields;
     ExprNodePtr value;
 };
+
+struct CaseBranchValue {
+    ExprNodeList labels;
+    StmtNodePtr statement;
+};
+
+using CaseBranchList = std::vector<CaseBranchValue>;
 
 using SemanticValue = std::variant<
     std::monostate,
@@ -54,6 +63,8 @@ using SemanticValue = std::variant<
     DeclNodeList,
     StmtNodeList,
     ExprNodeList,
+    CaseBranchValue,
+    CaseBranchList,
     RelOpTail,
     ExprChain,
     FactorTail,

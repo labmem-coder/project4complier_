@@ -40,6 +40,7 @@ private:
     void skipWhitespaceAndComments();
     bool skipBraceComment();
     bool skipParenStarComment();
+    bool skipLineComment();
 
     void addError(int errLine, int errCol, const std::string& msg);
 
@@ -48,7 +49,7 @@ private:
     Token scanToken();
     Token scanNumber(int startLine, int startCol);
     Token scanIdentifierOrKeyword(int startLine, int startCol);
-    Token scanCharLiteral(int startLine, int startCol);
+    Token scanCharOrStringLiteral(int startLine, int startCol);
 
     void pushBracket(char bracket, int bracketLine, int bracketCol);
     void popBracket(char closingBracket, int closingLine, int closingCol);

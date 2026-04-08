@@ -1,12 +1,26 @@
 #include "semantic_analyzer.h"
 #include <algorithm>
 #include <cctype>
+#include <set>
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 void SemanticAnalyzer::addError(const std::string& msg) {
     errors_.push_back({msg});
+}
+
+void SemanticAnalyzer::markCurrentFunctionAssigned() {
+    if (!functionAssignedStack_.empty()) {
+        functionAssignedStack_.back() = true;
+    }
+}
+
+std::optional<std::string> SemanticAnalyzer::constantValueKey(ExprNode* expr) const {
+    if (!expr) return std::nullopt;
+    auto* literal = dynamic_cast<LiteralExprNode*>(expr);
+    if (!literal) return std::nullopt;
+    return literal->literalType + ":" + literal->value;
 }
 
 bool SemanticAnalyzer::typesCompatible(const TypeInfo& lhs, const TypeInfo& rhs) const {
@@ -28,6 +42,9 @@ TypeInfo SemanticAnalyzer::inferType(ExprNode* expr) {
             auto* ve = static_cast<VariableExprNode*>(expr);
             Symbol* sym = symTable_.lookup(ve->name);
             if (!sym) return TypeInfo::makeSimple("void");
+            if (sym->kind == SymbolKind::Function && ve->indices.empty()) {
+                return TypeInfo::makeSimple(sym->returnType);
+            }
             if (sym->type.isArray()) {
                 if (!ve->indices.empty())
                     return TypeInfo::makeSimple(sym->type.elementType); // indexed access
@@ -47,6 +64,8 @@ TypeInfo SemanticAnalyzer::inferType(ExprNode* expr) {
             if (le->literalType == "real")   return TypeInfo::makeSimple("real");
             if (le->literalType == "char" || le->literalType == "letter")
                 return TypeInfo::makeSimple("char");
+            if (le->literalType == "string")
+                return TypeInfo::makeSimple("string");
             return TypeInfo::makeSimple("integer");
         }
 
@@ -159,6 +178,9 @@ void SemanticAnalyzer::visitConstDecl(ConstDeclNode& node) {
 
 void SemanticAnalyzer::visitVarDecl(VarDeclNode& node) {
     TypeInfo ti = TypeInfo::fromString(node.typeName);
+    if (ti.isArray() && ti.arrayLow > ti.arrayHigh) {
+        addError("Invalid array bounds in declaration: lower bound exceeds upper bound");
+    }
     for (auto& name : node.names) {
         Symbol sym;
         sym.name = name;
@@ -192,6 +214,9 @@ void SemanticAnalyzer::visitSubprogramDecl(SubprogramDeclNode& node) {
     // Enter subprogram scope
     symTable_.enterScope();
     currentFunction_ = (sym.kind == SymbolKind::Function) ? node.name : "";
+    if (sym.kind == SymbolKind::Function) {
+        functionAssignedStack_.push_back(false);
+    }
 
     // Declare parameters in the new scope
     for (auto& p : node.parameters) {
@@ -221,6 +246,13 @@ void SemanticAnalyzer::visitSubprogramDecl(SubprogramDeclNode& node) {
 
     if (node.body) node.body->accept(*this);
 
+    if (sym.kind == SymbolKind::Function) {
+        if (!functionAssignedStack_.back()) {
+            addError("Function '" + node.name + "' has no return assignment");
+        }
+        functionAssignedStack_.pop_back();
+    }
+
     currentFunction_ = "";
     symTable_.exitScope();
 }
@@ -240,6 +272,15 @@ void SemanticAnalyzer::visitAssignStmt(AssignStmtNode& node) {
     if (node.value)  node.value->accept(*this);
 
     if (node.target && node.value) {
+        if (auto* ve = dynamic_cast<VariableExprNode*>(node.target.get())) {
+            Symbol* targetSym = symTable_.lookup(ve->name);
+            if (targetSym && targetSym->kind == SymbolKind::Constant) {
+                addError("Cannot assign to constant '" + ve->name + "'");
+            }
+            if (!currentFunction_.empty() && ve->name == currentFunction_ && ve->indices.empty()) {
+                markCurrentFunctionAssigned();
+            }
+        }
         TypeInfo lhsType = inferType(node.target.get());
         TypeInfo rhsType = inferType(node.value.get());
         if (!typesCompatible(lhsType, rhsType)) {
@@ -264,13 +305,29 @@ void SemanticAnalyzer::visitCallStmt(CallStmtNode& node) {
             addError("Undeclared procedure: '" + node.callee + "'");
         }
     } else if (sym->kind != SymbolKind::Procedure && sym->kind != SymbolKind::Function) {
-        addError("'" + node.callee + "' is not a procedure");
+        addError("'" + node.callee + "' is not callable");
     } else {
-        // Check argument count
         if (node.arguments.size() != sym->params.size()) {
-            addError("Procedure '" + node.callee + "' expects " +
+            addError("Call to '" + node.callee + "' expects " +
                      std::to_string(sym->params.size()) + " argument(s), got " +
                      std::to_string(node.arguments.size()));
+        } else {
+            for (size_t i = 0; i < node.arguments.size(); ++i) {
+                if (node.arguments[i]) node.arguments[i]->accept(*this);
+                TypeInfo actual = inferType(node.arguments[i].get());
+                const ParamInfo& expected = sym->params[i];
+                if (!typesCompatible(expected.type, actual)) {
+                    addError("Argument " + std::to_string(i + 1) + " of '" + node.callee +
+                             "' expects " + expected.type.toString() +
+                             ", got " + actual.toString());
+                }
+                if (expected.byReference &&
+                    !dynamic_cast<VariableExprNode*>(node.arguments[i].get())) {
+                    addError("Argument " + std::to_string(i + 1) + " of '" + node.callee +
+                             "' must be a variable");
+                }
+            }
+            return;
         }
     }
     for (auto& arg : node.arguments) {
@@ -295,7 +352,61 @@ void SemanticAnalyzer::visitForStmt(ForStmtNode& node) {
     }
     if (node.startExpr) node.startExpr->accept(*this);
     if (node.endExpr)   node.endExpr->accept(*this);
+    ++loopDepth_;
     if (node.body)      node.body->accept(*this);
+    --loopDepth_;
+}
+
+void SemanticAnalyzer::visitWhileStmt(WhileStmtNode& node) {
+    if (node.condition) node.condition->accept(*this);
+    TypeInfo condType = inferType(node.condition.get());
+    if (!condType.isBoolean()) {
+        addError("While condition must be boolean");
+    }
+    ++loopDepth_;
+    if (node.body) node.body->accept(*this);
+    --loopDepth_;
+}
+
+void SemanticAnalyzer::visitCaseStmt(CaseStmtNode& node) {
+    if (node.expression) node.expression->accept(*this);
+    TypeInfo caseType = inferType(node.expression.get());
+    std::set<std::string> seenLabels;
+
+    ++caseDepth_;
+    for (auto& branch : node.branches) {
+        for (auto& label : branch.labels) {
+            if (label) {
+                label->accept(*this);
+                if (auto key = constantValueKey(label.get())) {
+                    if (!seenLabels.insert(*key).second) {
+                        addError("Duplicate case label '" +
+                                 key->substr(key->find(':') + 1) + "'");
+                    }
+                }
+                TypeInfo labelType = inferType(label.get());
+                if (!typesCompatible(caseType, labelType) &&
+                    !typesCompatible(labelType, caseType)) {
+                    addError("Case label type mismatch: expected " + caseType.toString() +
+                             ", got " + labelType.toString());
+                }
+            }
+        }
+        if (branch.statement) branch.statement->accept(*this);
+    }
+    --caseDepth_;
+}
+
+void SemanticAnalyzer::visitBreakStmt(BreakStmtNode& /*node*/) {
+    if (loopDepth_ <= 0 && caseDepth_ <= 0) {
+        addError("'break' can only appear inside for-loop or case statement");
+    }
+}
+
+void SemanticAnalyzer::visitContinueStmt(ContinueStmtNode& /*node*/) {
+    if (loopDepth_ <= 0) {
+        addError("'continue' can only appear inside for-loop");
+    }
 }
 
 void SemanticAnalyzer::visitReadStmt(ReadStmtNode& node) {
@@ -322,13 +433,24 @@ void SemanticAnalyzer::visitVariableExpr(VariableExprNode& node) {
     if (!sym) {
         addError("Undeclared identifier: '" + node.name + "'");
     } else if (sym->type.isArray() && !node.indices.empty()) {
-        // Check that indices are integer
         for (auto& idx : node.indices) {
             if (idx) {
                 idx->accept(*this);
                 TypeInfo idxType = inferType(idx.get());
                 if (!idxType.isInteger())
                     addError("Array index for '" + node.name + "' must be integer");
+                if (auto* literal = dynamic_cast<LiteralExprNode*>(idx.get());
+                    literal && idxType.isInteger()) {
+                    try {
+                        int value = std::stoi(literal->value);
+                        if (value < sym->type.arrayLow || value > sym->type.arrayHigh) {
+                            addError("Array index " + std::to_string(value) + " out of bounds for '" +
+                                     node.name + "' [" + std::to_string(sym->type.arrayLow) + ".." +
+                                     std::to_string(sym->type.arrayHigh) + "]");
+                        }
+                    } catch (...) {
+                    }
+                }
             }
         }
     }
@@ -338,20 +460,50 @@ void SemanticAnalyzer::visitLiteralExpr(LiteralExprNode& /*node*/) {}
 
 void SemanticAnalyzer::visitUnaryExpr(UnaryExprNode& node) {
     if (node.operand) node.operand->accept(*this);
+    TypeInfo operandType = inferType(node.operand.get());
+    if (node.op == "not" && !operandType.isBoolean()) {
+        addError("Operator 'not' requires boolean operand");
+    }
+    if (node.op == "-" && !operandType.isNumeric()) {
+        addError("Unary '-' requires numeric operand");
+    }
 }
 
 void SemanticAnalyzer::visitBinaryExpr(BinaryExprNode& node) {
     if (node.left)  node.left->accept(*this);
     if (node.right) node.right->accept(*this);
 
-    // Check operand types for integer-only operators
+    TypeInfo lt = inferType(node.left.get());
+    TypeInfo rt = inferType(node.right.get());
+
+    if (node.op == "+" || node.op == "-" || node.op == "*" || node.op == "/") {
+        if (!lt.isNumeric() || !rt.isNumeric()) {
+            addError("Operator '" + node.op + "' requires numeric operands");
+        }
+        return;
+    }
+
     if (node.op == "div" || node.op == "mod") {
-        TypeInfo lt = inferType(node.left.get());
-        TypeInfo rt = inferType(node.right.get());
         if (!lt.isInteger())
             addError("Left operand of '" + node.op + "' must be integer");
         if (!rt.isInteger())
             addError("Right operand of '" + node.op + "' must be integer");
+        return;
+    }
+
+    if (node.op == "and" || node.op == "or") {
+        if (!lt.isBoolean() || !rt.isBoolean()) {
+            addError("Operator '" + node.op + "' requires boolean operands");
+        }
+        return;
+    }
+
+    if (node.op == "=" || node.op == "<>" || node.op == "<" ||
+        node.op == "<=" || node.op == ">" || node.op == ">=") {
+        if (!typesCompatible(lt, rt) && !typesCompatible(rt, lt)) {
+            addError("Operands of '" + node.op + "' are incompatible: " +
+                     lt.toString() + " and " + rt.toString());
+        }
     }
 }
 
@@ -366,6 +518,23 @@ void SemanticAnalyzer::visitCallExpr(CallExprNode& node) {
             addError("Function '" + node.callee + "' expects " +
                      std::to_string(sym->params.size()) + " argument(s), got " +
                      std::to_string(node.arguments.size()));
+        } else {
+            for (size_t i = 0; i < node.arguments.size(); ++i) {
+                if (node.arguments[i]) node.arguments[i]->accept(*this);
+                TypeInfo actual = inferType(node.arguments[i].get());
+                const ParamInfo& expected = sym->params[i];
+                if (!typesCompatible(expected.type, actual)) {
+                    addError("Argument " + std::to_string(i + 1) + " of '" + node.callee +
+                             "' expects " + expected.type.toString() +
+                             ", got " + actual.toString());
+                }
+                if (expected.byReference &&
+                    !dynamic_cast<VariableExprNode*>(node.arguments[i].get())) {
+                    addError("Argument " + std::to_string(i + 1) + " of '" + node.callee +
+                             "' must be a variable");
+                }
+            }
+            return;
         }
     }
     for (auto& arg : node.arguments) {

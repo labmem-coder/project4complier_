@@ -98,6 +98,16 @@ StatementTail statementTailValue(const SemanticValue& value) {
     return {};
 }
 
+CaseBranchValue caseBranchValue(const SemanticValue& value) {
+    if (const auto* branch = std::get_if<CaseBranchValue>(&value)) return *branch;
+    return {};
+}
+
+CaseBranchList caseBranchListValue(const SemanticValue& value) {
+    if (const auto* branches = std::get_if<CaseBranchList>(&value)) return *branches;
+    return {};
+}
+
 void appendDeclList(DeclNodeList& target, const DeclNodeList& source) {
     for (const auto& node : source) {
         if (node) target.push_back(node);
@@ -131,6 +141,47 @@ ExprNodePtr foldLeftAssociative(const ExprNodePtr& left, const ExprChain& chain)
 std::string typeNameFromBasic(const SemanticValue& value) {
     if (const auto* token = std::get_if<Token>(&value)) return token->lexeme;
     return stringValue(value);
+}
+
+ExprNodePtr literalExprFromToken(const Token& token, const std::string& prefix = "") {
+    auto lit = std::make_shared<LiteralExprNode>();
+    if (token.type == TokenType::NUM) {
+        lit->literalType = "num";
+        lit->value = prefix + token.lexeme;
+        return std::static_pointer_cast<ExprNode>(lit);
+    }
+    if (token.type == TokenType::LETTER) {
+        lit->literalType = "char";
+        lit->value = token.lexeme;
+        return std::static_pointer_cast<ExprNode>(lit);
+    }
+    if (token.type == TokenType::STRING) {
+        lit->literalType = "string";
+        lit->value = token.lexeme;
+        return std::static_pointer_cast<ExprNode>(lit);
+    }
+    return nullptr;
+}
+
+ExprNodePtr constLikeExprValue(const Production& p, const std::vector<SemanticValue>& v, size_t offset = 0) {
+    if (offset >= v.size()) return nullptr;
+    if (auto expr = exprValue(v[offset])) return expr;
+    if (offset + 1 < v.size()) {
+        if (p.rhs[offset] == "+" && p.rhs[offset + 1] == "num") {
+            if (const auto* token = std::get_if<Token>(&v[offset + 1])) {
+                return literalExprFromToken(*token, "+");
+            }
+        }
+        if (p.rhs[offset] == "-" && p.rhs[offset + 1] == "num") {
+            if (const auto* token = std::get_if<Token>(&v[offset + 1])) {
+                return literalExprFromToken(*token, "-");
+            }
+        }
+    }
+    if (const auto* token = std::get_if<Token>(&v[offset])) {
+        return literalExprFromToken(*token);
+    }
+    return nullptr;
 }
 
 } // namespace
@@ -315,8 +366,7 @@ bool Parser::parse() {
             } else {
                 step.action = "ERROR: expected '" + top + "', got '" + tok.lexeme + "'";
                 steps.push_back(step);
-                addError("Expected '" + top + "', but got '" + tok.lexeme + "' (line " +
-                         std::to_string(tok.line) + ", col " + std::to_string(tok.column) + ")");
+                addError("Expected '" + top + "', got '" + tok.lexeme + "'");
                 stk.pop();
             }
             continue;
@@ -359,9 +409,8 @@ bool Parser::parse() {
                 expected += "'" + eit->first + "'";
             }
 
-            addError("Syntax error at '" + tok.lexeme + "' (line " + std::to_string(tok.line) +
-                     ", col " + std::to_string(tok.column) + "): expected one of {" + expected +
-                     "} for non-terminal '" + top + "'");
+            addError("Syntax error at '" + tok.lexeme + "': expected {" + expected +
+                     "} for '" + top + "'");
 
             bool recovered = false;
             auto& followSet = grammar.followSets[top];
@@ -806,6 +855,14 @@ void Parser::registerDefaultActions() {
             node->typeName = typeNameFromBasic(v[2]);
             return std::static_pointer_cast<DeclNode>(node);
         }
+        if (rhsEquals(p, {"id", "idlist'", ":", "basic_type"})) {
+            auto node = std::make_shared<ParamDeclNode>();
+            node->names = std::vector<std::string>{tokenLexeme(v[0])};
+            auto tail = stringListValue(v[1]);
+            node->names.insert(node->names.end(), tail.begin(), tail.end());
+            node->typeName = typeNameFromBasic(v[3]);
+            return std::static_pointer_cast<DeclNode>(node);
+        }
         return DeclNodePtr{};
     });
 
@@ -816,6 +873,26 @@ void Parser::registerDefaultActions() {
             block->constDecls = declListValue(v[0]);
             block->varDecls = declListValue(v[1]);
             block->compoundStmt = stmtValue(v[2]);
+            return block;
+        }
+        if (rhsEquals(p, {"const", "const_decl_list", "var_declarations", "compound_statement"})) {
+            auto block = std::make_shared<BlockNode>();
+            block->constDecls = declListValue(v[1]);
+            block->varDecls = declListValue(v[2]);
+            block->compoundStmt = stmtValue(v[3]);
+            return block;
+        }
+        if (rhsEquals(p, {"var", "var_decl_list", "compound_statement"})) {
+            auto block = std::make_shared<BlockNode>();
+            block->varDecls = declListValue(v[1]);
+            block->compoundStmt = stmtValue(v[2]);
+            return block;
+        }
+        if (rhsEquals(p, {"begin", "statement_list", "end"})) {
+            auto block = std::make_shared<BlockNode>();
+            auto compound = std::make_shared<CompoundStmtNode>();
+            compound->statements = stmtListValue(v[1]);
+            block->compoundStmt = std::static_pointer_cast<StmtNode>(compound);
             return block;
         }
         return std::monostate{};
@@ -900,6 +977,29 @@ void Parser::registerDefaultActions() {
             node->body = stmtValue(v[7]);
             return std::static_pointer_cast<StmtNode>(node);
         }
+        if (rhsEquals(p, {"while", "expression", "do", "statement"})) {
+            auto node = std::make_shared<WhileStmtNode>();
+            node->condition = exprValue(v[1]);
+            node->body = stmtValue(v[3]);
+            return std::static_pointer_cast<StmtNode>(node);
+        }
+        if (rhsEquals(p, {"case", "expression", "of", "case_branch_list", "end"})) {
+            auto node = std::make_shared<CaseStmtNode>();
+            node->expression = exprValue(v[1]);
+            for (const auto& branch : caseBranchListValue(v[3])) {
+                CaseBranchNode astBranch;
+                astBranch.labels = branch.labels;
+                astBranch.statement = branch.statement;
+                node->branches.push_back(astBranch);
+            }
+            return std::static_pointer_cast<StmtNode>(node);
+        }
+        if (rhsEquals(p, {"break"})) {
+            return std::static_pointer_cast<StmtNode>(std::make_shared<BreakStmtNode>());
+        }
+        if (rhsEquals(p, {"continue"})) {
+            return std::static_pointer_cast<StmtNode>(std::make_shared<ContinueStmtNode>());
+        }
         if (rhsEquals(p, {"read", "(", "variable_list", ")"})) {
             auto node = std::make_shared<ReadStmtNode>();
             node->variables = exprListValue(v[2]);
@@ -935,6 +1035,104 @@ void Parser::registerDefaultActions() {
             return tail;
         }
         if (p.rhs.empty()) return StatementTail{};
+        return std::monostate{};
+    });
+
+    // --- case_branch_list / case_branch_list' / case_branch / case_label_list ---
+    registerAction("case_branch_list", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (rhsEquals(p, {"case_branch", "case_branch_list'"})) {
+            CaseBranchList branches;
+            branches.push_back(caseBranchValue(v[0]));
+            auto tail = caseBranchListValue(v[1]);
+            branches.insert(branches.end(), tail.begin(), tail.end());
+            return branches;
+        }
+        return std::monostate{};
+    });
+
+    registerAction("case_branch_list'", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (rhsEquals(p, {";", "case_branch", "case_branch_list'"})) {
+            CaseBranchList branches;
+            branches.push_back(caseBranchValue(v[1]));
+            auto tail = caseBranchListValue(v[2]);
+            branches.insert(branches.end(), tail.begin(), tail.end());
+            return branches;
+        }
+        if (rhsEquals(p, {";", "case_branch_list''"})) {
+            return caseBranchListValue(v[1]);
+        }
+        if (rhsEquals(p, {";"})) return CaseBranchList{};
+        if (p.rhs.empty()) return CaseBranchList{};
+        return std::monostate{};
+    });
+
+    registerAction("case_branch_list''", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (p.rhs.empty()) return CaseBranchList{};
+        if (p.rhs.size() == 4 && p.rhs[1] == "case_label_list'" && p.rhs[2] == ":" &&
+            p.rhs[3] == "statement") {
+            CaseBranchValue branch;
+            ExprNodeList labels;
+            auto first = constLikeExprValue(p, v, 0);
+            if (first) labels.push_back(first);
+            appendExprList(labels, exprListValue(v[1]));
+            branch.labels = labels;
+            branch.statement = stmtValue(v[3]);
+            return CaseBranchList{branch};
+        }
+        if (p.rhs.size() == 5 && p.rhs[1] == "case_label_list'" && p.rhs[2] == ":" &&
+            p.rhs[3] == "statement" && p.rhs[4] == "case_branch_list'") {
+            CaseBranchValue branch;
+            ExprNodeList labels;
+            auto first = constLikeExprValue(p, v, 0);
+            if (first) labels.push_back(first);
+            appendExprList(labels, exprListValue(v[1]));
+            branch.labels = labels;
+            branch.statement = stmtValue(v[3]);
+            CaseBranchList branches{branch};
+            auto tail = caseBranchListValue(v[4]);
+            branches.insert(branches.end(), tail.begin(), tail.end());
+            return branches;
+        }
+        return std::monostate{};
+    });
+
+    registerAction("case_branch", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (rhsEquals(p, {"case_label_list", ":", "statement"})) {
+            CaseBranchValue branch;
+            branch.labels = exprListValue(v[0]);
+            branch.statement = stmtValue(v[2]);
+            return branch;
+        }
+        return std::monostate{};
+    });
+
+    registerAction("case_label_list", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (rhsEquals(p, {"const_value", "case_label_list'"})) {
+            ExprNodeList labels;
+            auto first = exprValue(v[0]);
+            if (first) labels.push_back(first);
+            appendExprList(labels, exprListValue(v[1]));
+            return labels;
+        }
+        if (p.rhs.size() == 2 && p.rhs[1] == "case_label_list'") {
+            ExprNodeList labels;
+            auto first = constLikeExprValue(p, v, 0);
+            if (first) labels.push_back(first);
+            appendExprList(labels, exprListValue(v[1]));
+            return labels;
+        }
+        return std::monostate{};
+    });
+
+    registerAction("case_label_list'", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (rhsEquals(p, {",", "const_value", "case_label_list'"})) {
+            ExprNodeList labels;
+            auto first = exprValue(v[1]);
+            if (first) labels.push_back(first);
+            appendExprList(labels, exprListValue(v[2]));
+            return labels;
+        }
+        if (p.rhs.empty()) return ExprNodeList{};
         return std::monostate{};
     });
 
@@ -989,6 +1187,7 @@ void Parser::registerDefaultActions() {
 
     // --- expression_list ---
     registerAction("expression_list", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (p.rhs.empty()) return ExprNodeList{};
         if (rhsEquals(p, {"expression", "expression_list'"})) {
             ExprNodeList list;
             auto first = exprValue(v[0]);
@@ -1083,6 +1282,18 @@ void Parser::registerDefaultActions() {
         if (rhsEquals(p, {"num"})) {
             auto lit = std::make_shared<LiteralExprNode>();
             lit->literalType = "num";
+            lit->value = tokenLexeme(v[0]);
+            return std::static_pointer_cast<ExprNode>(lit);
+        }
+        if (rhsEquals(p, {"string"})) {
+            auto lit = std::make_shared<LiteralExprNode>();
+            lit->literalType = "string";
+            lit->value = tokenLexeme(v[0]);
+            return std::static_pointer_cast<ExprNode>(lit);
+        }
+        if (rhsEquals(p, {"letter"})) {
+            auto lit = std::make_shared<LiteralExprNode>();
+            lit->literalType = "char";
             lit->value = tokenLexeme(v[0]);
             return std::static_pointer_cast<ExprNode>(lit);
         }

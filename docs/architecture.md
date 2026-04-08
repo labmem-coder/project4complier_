@@ -37,8 +37,10 @@ tests/
 ├── correct_test/        # 期望解析成功的 .pas 测试文件
 ├── error_test_bison/    # 期望有语法错误的 .pas 测试文件
 ├── error_test_lex/      # 期望有词法错误的 .pas 测试文件
-├── test_lexer.cpp       # 词法分析器单元测试
-├── test_integration.cpp # 词法 + 语法集成测试
+├── test_lexer.cpp       # 词法分析器单元测试源文件
+├── test_integration.cpp # 统一集成测试源文件
+├── test_lexer.exe       # 词法测试可执行文件
+├── test_integration.exe # 统一集成测试可执行文件
 └── run_tests.sh         # 批量测试脚本
 ```
 

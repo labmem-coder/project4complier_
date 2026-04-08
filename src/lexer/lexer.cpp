@@ -22,6 +22,7 @@ const std::unordered_map<std::string, TokenType>& Lexer::keywordMap() {
         {"else",      TokenType::ELSE},
         {"for",       TokenType::FOR},
         {"to",        TokenType::TO},
+        {"downto",    TokenType::DOWNTO},
         {"do",        TokenType::DO},
         {"read",      TokenType::READ},
         {"write",     TokenType::WRITE},
@@ -32,9 +33,14 @@ const std::unordered_map<std::string, TokenType>& Lexer::keywordMap() {
         {"real",      TokenType::REAL_KW},
         {"boolean",   TokenType::BOOLEAN_KW},
         {"char",      TokenType::CHAR_KW},
+        {"string",    TokenType::STRING_KW},
         {"array",     TokenType::ARRAY},
         {"of",        TokenType::OF},
         {"not",       TokenType::NOT},
+        {"case",      TokenType::CASE},
+        {"break",     TokenType::BREAK},
+        {"continue",  TokenType::CONTINUE},
+        {"record",    TokenType::RECORD},
         {"div",       TokenType::DIV_KW},
         {"mod",       TokenType::MOD},
         {"and",       TokenType::AND_KW},
@@ -172,6 +178,16 @@ bool Lexer::skipParenStarComment() {
     return false;
 }
 
+bool Lexer::skipLineComment() {
+    // Current two chars are '/'
+    advance(); // consume first '/'
+    advance(); // consume second '/'
+    while (!isAtEnd() && peek() != '\n') {
+        advance();
+    }
+    return true;
+}
+
 void Lexer::skipWhitespaceAndComments() {
     while (!isAtEnd()) {
         char c = peek();
@@ -188,6 +204,11 @@ void Lexer::skipWhitespaceAndComments() {
         // Paren-star comment (* ... *)
         if (c == '(' && peekNext() == '*') {
             skipParenStarComment();
+            continue;
+        }
+        // Line comment // ...
+        if (c == '/' && peekNext() == '/') {
+            skipLineComment();
             continue;
         }
         break;
@@ -215,9 +236,13 @@ Token Lexer::scanNumber(int startLine, int startCol) {
     if (!isAtEnd() && peek() == '.' && peekNext() != '.') {
         advance(); // consume '.'
         sawFraction = true;
-        if (!isAtEnd() && isDigit(peek())) {
-            while (!isAtEnd() && isDigit(peek())) advance();
+        if (isAtEnd() || !isDigit(peek())) {
+            addError(startLine, startCol,
+                     "Invalid real literal '" + source.substr(start, pos - start) +
+                     "': missing digits after decimal point");
+            return {TokenType::END_OF_FILE, "", startLine, startCol};
         }
+        while (!isAtEnd() && isDigit(peek())) advance();
     }
 
     // 1.2.3 -> invalid number with multiple decimal points.
@@ -260,21 +285,28 @@ Token Lexer::scanIdentifierOrKeyword(int startLine, int startCol) {
 // ---------------------------------------------------------------------------
 // Character literal: 'x'
 // ---------------------------------------------------------------------------
-Token Lexer::scanCharLiteral(int startLine, int startCol) {
+Token Lexer::scanCharOrStringLiteral(int startLine, int startCol) {
     advance(); // consume opening '\''
     if (isAtEnd()) {
         addError(startLine, startCol, "Unterminated character literal");
         return {TokenType::END_OF_FILE, "", startLine, startCol};
     }
-    char ch = advance(); // the character
+    std::string content;
+    while (!isAtEnd() && peek() != '\'') {
+        if (peek() == '\n' || peek() == '\r') break;
+        content.push_back(advance());
+    }
     if (isAtEnd() || peek() != '\'') {
         addError(startLine, startCol, "Unterminated character literal, expected closing '\\''");
         return {TokenType::END_OF_FILE, "", startLine, startCol};
     }
     advance(); // consume closing '\''
     // Store as 'x' (with quotes) — convenient for C code generation
-    std::string lexeme = std::string("'") + ch + "'";
-    return {TokenType::LETTER, lexeme, startLine, startCol};
+    std::string lexeme = std::string("'") + content + "'";
+    if (content.size() == 1) {
+        return {TokenType::LETTER, lexeme, startLine, startCol};
+    }
+    return {TokenType::STRING, lexeme, startLine, startCol};
 }
 
 // ---------------------------------------------------------------------------
@@ -291,8 +323,8 @@ Token Lexer::scanToken() {
     // Identifiers and keywords
     if (isAlpha(c)) return scanIdentifierOrKeyword(startLine, startCol);
 
-    // Character literal
-    if (c == '\'') return scanCharLiteral(startLine, startCol);
+    // Character/string literal
+    if (c == '\'') return scanCharOrStringLiteral(startLine, startCol);
 
     // Operators and delimiters
     advance(); // consume the character

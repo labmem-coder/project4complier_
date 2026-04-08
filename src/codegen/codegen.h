@@ -36,6 +36,10 @@ public:
     void visitCallStmt(CallStmtNode& node) override;
     void visitIfStmt(IfStmtNode& node) override;
     void visitForStmt(ForStmtNode& node) override;
+    void visitWhileStmt(WhileStmtNode& node) override;
+    void visitCaseStmt(CaseStmtNode& node) override;
+    void visitBreakStmt(BreakStmtNode& node) override;
+    void visitContinueStmt(ContinueStmtNode& node) override;
     void visitReadStmt(ReadStmtNode& node) override;
     void visitWriteStmt(WriteStmtNode& node) override;
     void visitEmptyStmt(EmptyStmtNode& node) override;

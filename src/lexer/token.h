@@ -10,10 +10,10 @@
 enum class TokenType {
     // Keywords
     PROGRAM, VAR, CONST, PROCEDURE, FUNCTION,
-    BEGIN, END, IF, THEN, ELSE, FOR, TO, DO,
+    BEGIN, END, IF, THEN, ELSE, FOR, TO, DOWNTO, DO,
     READ, WRITE, WHILE, REPEAT, UNTIL,
-    INTEGER_KW, REAL_KW, BOOLEAN_KW, CHAR_KW,
-    ARRAY, OF, NOT,
+    INTEGER_KW, REAL_KW, BOOLEAN_KW, CHAR_KW, STRING_KW,
+    ARRAY, OF, NOT, CASE, BREAK, CONTINUE, RECORD,
 
     // Operators
     ASSIGN,     // :=
@@ -48,6 +48,7 @@ enum class TokenType {
     // Literals
     NUM,        // integer or real number literal
     LETTER,     // character literal like 'a'
+    STRING,     // string literal like 'hello'
     ID,         // identifier
 
     // Special
@@ -70,13 +71,17 @@ inline std::unordered_map<std::string, TokenType> buildTokenNameMap() {
         {"END", TokenType::END}, {"IF", TokenType::IF},
         {"THEN", TokenType::THEN}, {"ELSE", TokenType::ELSE},
         {"FOR", TokenType::FOR}, {"TO", TokenType::TO},
+        {"DOWNTO", TokenType::DOWNTO},
         {"DO", TokenType::DO}, {"READ", TokenType::READ},
         {"WRITE", TokenType::WRITE}, {"WHILE", TokenType::WHILE},
         {"REPEAT", TokenType::REPEAT}, {"UNTIL", TokenType::UNTIL},
         {"INTEGER", TokenType::INTEGER_KW}, {"REAL", TokenType::REAL_KW},
         {"BOOLEAN", TokenType::BOOLEAN_KW}, {"CHAR", TokenType::CHAR_KW},
+        {"STRING_KW", TokenType::STRING_KW},
         {"ARRAY", TokenType::ARRAY}, {"OF", TokenType::OF},
-        {"NOT", TokenType::NOT},
+        {"NOT", TokenType::NOT}, {"CASE", TokenType::CASE},
+        {"BREAK", TokenType::BREAK}, {"CONTINUE", TokenType::CONTINUE},
+        {"RECORD", TokenType::RECORD},
         {"ASSIGN", TokenType::ASSIGN}, {"PLUS", TokenType::PLUS},
         {"MINUS", TokenType::MINUS}, {"MULTIPLY", TokenType::MULTIPLY},
         {"DIVIDE", TokenType::DIVIDE}, {"DIV", TokenType::DIV_KW},
@@ -91,6 +96,7 @@ inline std::unordered_map<std::string, TokenType> buildTokenNameMap() {
         {"COMMA", TokenType::COMMA}, {"DOT", TokenType::DOT},
         {"DOTDOT", TokenType::DOTDOT},
         {"NUM", TokenType::NUM}, {"LETTER", TokenType::LETTER},
+        {"STRING", TokenType::STRING},
         {"ID", TokenType::ID},
         {"END_OF_FILE", TokenType::END_OF_FILE}, {"EOF", TokenType::END_OF_FILE}
     };
@@ -105,13 +111,17 @@ inline std::string tokenTypeToTerminal(TokenType t) {
         {TokenType::END, "end"}, {TokenType::IF, "if"},
         {TokenType::THEN, "then"}, {TokenType::ELSE, "else"},
         {TokenType::FOR, "for"}, {TokenType::TO, "to"},
+        {TokenType::DOWNTO, "downto"},
         {TokenType::DO, "do"}, {TokenType::READ, "read"},
         {TokenType::WRITE, "write"}, {TokenType::WHILE, "while"},
         {TokenType::REPEAT, "repeat"}, {TokenType::UNTIL, "until"},
         {TokenType::INTEGER_KW, "integer"}, {TokenType::REAL_KW, "real"},
         {TokenType::BOOLEAN_KW, "boolean"}, {TokenType::CHAR_KW, "char"},
+        {TokenType::STRING_KW, "string_kw"},
         {TokenType::ARRAY, "array"}, {TokenType::OF, "of"},
-        {TokenType::NOT, "not"},
+        {TokenType::NOT, "not"}, {TokenType::CASE, "case"},
+        {TokenType::BREAK, "break"}, {TokenType::CONTINUE, "continue"},
+        {TokenType::RECORD, "record"},
         {TokenType::ASSIGN, "assignop"}, {TokenType::PLUS, "+"},
         {TokenType::MINUS, "-"}, {TokenType::MULTIPLY, "*"},
         {TokenType::DIVIDE, "/"}, {TokenType::DIV_KW, "div"},
@@ -126,6 +136,7 @@ inline std::string tokenTypeToTerminal(TokenType t) {
         {TokenType::COMMA, ","}, {TokenType::DOT, "."},
         {TokenType::DOTDOT, ".."},
         {TokenType::NUM, "num"}, {TokenType::LETTER, "letter"},
+        {TokenType::STRING, "string"},
         {TokenType::ID, "id"},
         {TokenType::END_OF_FILE, "$"}
     };
@@ -147,13 +158,17 @@ inline std::string tokenTypeToString(TokenType t) {
         {TokenType::END, "END"}, {TokenType::IF, "IF"},
         {TokenType::THEN, "THEN"}, {TokenType::ELSE, "ELSE"},
         {TokenType::FOR, "FOR"}, {TokenType::TO, "TO"},
+        {TokenType::DOWNTO, "DOWNTO"},
         {TokenType::DO, "DO"}, {TokenType::READ, "READ"},
         {TokenType::WRITE, "WRITE"}, {TokenType::WHILE, "WHILE"},
         {TokenType::REPEAT, "REPEAT"}, {TokenType::UNTIL, "UNTIL"},
         {TokenType::INTEGER_KW, "INTEGER"}, {TokenType::REAL_KW, "REAL"},
         {TokenType::BOOLEAN_KW, "BOOLEAN"}, {TokenType::CHAR_KW, "CHAR"},
+        {TokenType::STRING_KW, "STRING_KW"},
         {TokenType::ARRAY, "ARRAY"}, {TokenType::OF, "OF"},
-        {TokenType::NOT, "NOT"},
+        {TokenType::NOT, "NOT"}, {TokenType::CASE, "CASE"},
+        {TokenType::BREAK, "BREAK"}, {TokenType::CONTINUE, "CONTINUE"},
+        {TokenType::RECORD, "RECORD"},
         {TokenType::ASSIGN, "ASSIGN"}, {TokenType::PLUS, "PLUS"},
         {TokenType::MINUS, "MINUS"}, {TokenType::MULTIPLY, "MULTIPLY"},
         {TokenType::DIVIDE, "DIVIDE"}, {TokenType::DIV_KW, "DIV"},
@@ -168,6 +183,7 @@ inline std::string tokenTypeToString(TokenType t) {
         {TokenType::COMMA, "COMMA"}, {TokenType::DOT, "DOT"},
         {TokenType::DOTDOT, "DOTDOT"},
         {TokenType::NUM, "NUM"}, {TokenType::LETTER, "LETTER"},
+        {TokenType::STRING, "STRING"},
         {TokenType::ID, "ID"},
         {TokenType::END_OF_FILE, "EOF"}
     };
