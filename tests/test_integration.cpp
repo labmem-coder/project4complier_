@@ -250,6 +250,40 @@ static void testWhileStatement() {
     PASS();
 }
 
+static void testDowntoStatement() {
+    TEST("Parse/Semantic/Codegen: for downto statement");
+    auto r = runFullPipeline(
+        "program main;\n"
+        "var i: integer;\n"
+        "begin\n"
+        "  for i := 3 downto 1 do\n"
+        "    write(i)\n"
+        "end.\n"
+    );
+    EXPECT_TRUE(r.parse.success);
+    EXPECT_TRUE(r.semanticSuccess);
+    EXPECT_TRUE(normalizeCode(r.generatedC).find("for (i = 3; i >= 1; i--)") != std::string::npos);
+    PASS();
+}
+
+static void testRecordDeclarationAndFieldAccess() {
+    TEST("Parse/Semantic/Codegen: record declaration and field access");
+    auto r = runFullPipeline(
+        "program main;\n"
+        "var person: record name: string; age: integer; end;\n"
+        "begin\n"
+        "  person.name := 'Ada';\n"
+        "  person.age := 20;\n"
+        "  write(person.name, person.age)\n"
+        "end.\n"
+    );
+    EXPECT_TRUE(r.parse.success);
+    EXPECT_TRUE(r.semanticSuccess);
+    EXPECT_TRUE(normalizeCode(r.generatedC).find("struct { const char* name; int age; } person;") != std::string::npos);
+    EXPECT_TRUE(normalizeCode(r.generatedC).find("person.name = \"Ada\";") != std::string::npos);
+    PASS();
+}
+
 static void testBareZeroArgumentFunctionValue() {
     TEST("Parse/Semantic: zero-argument function used without parentheses");
     auto r = runFullPipeline(
@@ -513,6 +547,21 @@ static void testSemanticWhileConditionMustBeBoolean() {
     PASS();
 }
 
+static void testSemanticRecordFieldMustExist() {
+    TEST("Semantic: record field lookup is validated");
+    auto r = runFullPipeline(
+        "program main;\n"
+        "var person: record age: integer; end;\n"
+        "begin\n"
+        "  write(person.name)\n"
+        "end.\n"
+    );
+    EXPECT_TRUE(r.parse.success);
+    EXPECT_TRUE(!r.semanticSuccess);
+    EXPECT_TRUE(containsErrorMessage(r.semanticErrors, "has no field 'name'"));
+    PASS();
+}
+
 // ---------------------------------------------------------------------------
 // Code generation comparison tests
 // ---------------------------------------------------------------------------
@@ -679,6 +728,8 @@ int main() {
     testSimpleProgram();
     testZeroArgumentFunctionCall();
     testWhileStatement();
+    testDowntoStatement();
+    testRecordDeclarationAndFieldAccess();
     testBareZeroArgumentFunctionValue();
     testAstForSubprogramBodyAndParams();
 
@@ -695,6 +746,7 @@ int main() {
     testSemanticDuplicateCaseLabel();
     testSemanticInvalidOperatorOperands();
     testSemanticWhileConditionMustBeBoolean();
+    testSemanticRecordFieldMustExist();
 
     testCodegenSimpleProgram();
     testCodegenFunctionCall();

@@ -9,13 +9,14 @@
 // TypeInfo — describes a Pascal-S type (simple or array)
 // ---------------------------------------------------------------------------
 struct TypeInfo {
-    enum class Category { Simple, Array };
+    enum class Category { Simple, Array, Record };
     Category category = Category::Simple;
     std::string baseType;      // "integer", "real", "boolean", "char"
     // Array-specific
     int arrayLow  = 0;
     int arrayHigh = 0;
     std::string elementType;   // element base type for arrays
+    std::vector<std::pair<std::string, TypeInfo>> recordFields;
 
     bool isNumeric()  const { return baseType == "integer" || baseType == "real"; }
     bool isInteger()  const { return category == Category::Simple && baseType == "integer"; }
@@ -23,13 +24,16 @@ struct TypeInfo {
     bool isBoolean()  const { return category == Category::Simple && baseType == "boolean"; }
     bool isChar()     const { return category == Category::Simple && baseType == "char"; }
     bool isArray()    const { return category == Category::Array; }
+    bool isRecord()   const { return category == Category::Record; }
 
     std::string toString() const;
+    const TypeInfo* findField(const std::string& fieldName) const;
 
     // Parse a type string produced by the parser, e.g. "integer" or "array[0..5] of integer"
     static TypeInfo fromString(const std::string& typeStr);
     static TypeInfo makeSimple(const std::string& base);
     static TypeInfo makeArray(int low, int high, const std::string& elemType);
+    static TypeInfo makeRecord(const std::vector<std::pair<std::string, TypeInfo>>& fields);
 };
 
 // ---------------------------------------------------------------------------

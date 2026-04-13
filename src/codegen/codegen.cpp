@@ -2,6 +2,35 @@
 #include <algorithm>
 #include <cctype>
 
+namespace {
+
+std::string simplePascalTypeToCType(const std::string& pascalType) {
+    if (pascalType == "integer") return "int";
+    if (pascalType == "real")    return "double";
+    if (pascalType == "boolean") return "int";
+    if (pascalType == "char")    return "char";
+    if (pascalType == "string")  return "const char*";
+    return "int";
+}
+
+std::string cDeclarationFromTypeInfo(const TypeInfo& ti, const std::string& name) {
+    if (ti.isArray()) {
+        TypeInfo elementType = TypeInfo::fromString(ti.elementType);
+        return cDeclarationFromTypeInfo(elementType, name + "[" + std::to_string(ti.arrayHigh - ti.arrayLow + 1) + "]");
+    }
+    if (ti.isRecord()) {
+        std::string decl = "struct { ";
+        for (const auto& field : ti.recordFields) {
+            decl += cDeclarationFromTypeInfo(field.second, field.first) + "; ";
+        }
+        decl += "} " + name;
+        return decl;
+    }
+    return simplePascalTypeToCType(ti.baseType) + " " + name;
+}
+
+} // namespace
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -19,12 +48,7 @@ void CCodeGenerator::emitLine(const std::string& s) {
 }
 
 std::string CCodeGenerator::pascalTypeToCType(const std::string& pascalType) const {
-    if (pascalType == "integer") return "int";
-    if (pascalType == "real")    return "double";
-    if (pascalType == "boolean") return "int";
-    if (pascalType == "char")    return "char";
-    if (pascalType == "string")  return "const char*";
-    return "int";  // fallback
+    return simplePascalTypeToCType(pascalType);
 }
 
 std::string CCodeGenerator::formatSpecifier(const TypeInfo& ti, bool forScanf) const {
@@ -50,12 +74,20 @@ TypeInfo CCodeGenerator::inferType(ExprNode* expr) {
             auto* ve = static_cast<VariableExprNode*>(expr);
             Symbol* sym = symTable_.lookup(ve->name);
             if (!sym) return TypeInfo::makeSimple("integer");
-            if (sym->kind == SymbolKind::Function && ve->indices.empty()) {
+            if (sym->kind == SymbolKind::Function && ve->indices.empty() && ve->fields.empty()) {
                 return TypeInfo::makeSimple(sym->returnType);
             }
-            if (sym->type.isArray() && !ve->indices.empty())
-                return TypeInfo::makeSimple(sym->type.elementType);
-            return sym->type;
+            TypeInfo current = sym->type;
+            if (current.isArray() && !ve->indices.empty()) {
+                current = TypeInfo::fromString(current.elementType);
+            }
+            for (const auto& field : ve->fields) {
+                if (!current.isRecord()) return TypeInfo::makeSimple("integer");
+                const TypeInfo* fieldType = current.findField(field);
+                if (!fieldType) return TypeInfo::makeSimple("integer");
+                current = *fieldType;
+            }
+            return current;
         }
         case ASTNodeKind::LiteralExpr: {
             auto* le = static_cast<LiteralExprNode*>(expr);
@@ -120,6 +152,9 @@ void CCodeGenerator::emitVarAccess(VariableExprNode& node) {
             }
             emit("]");
         }
+    }
+    for (const auto& field : node.fields) {
+        emit("." + field);
     }
 }
 
@@ -237,27 +272,33 @@ void CCodeGenerator::visitVarDecl(VarDeclNode& node) {
         symTable_.declare(sym);
     }
 
-    if (ti.isArray()) {
-        std::string cElemType = pascalTypeToCType(ti.elementType);
-        int size = ti.arrayHigh - ti.arrayLow + 1;
+    if (ti.isRecord()) {
         for (auto& name : node.names) {
-            emitLine(cElemType + " " + name + "[" + std::to_string(size) + "];");
+            emitLine(cDeclarationFromTypeInfo(ti, name) + ";");
+        }
+        return;
+    }
+
+    if (ti.isArray()) {
+        for (auto& name : node.names) {
+            emitLine(cDeclarationFromTypeInfo(ti, name) + ";");
+        }
+        return;
+    }
+
+    std::string cType = pascalTypeToCType(ti.baseType);
+    if (ti.baseType == "string") {
+        for (auto& name : node.names) {
+            emitLine(cType + " " + name + ";");
         }
     } else {
-        std::string cType = pascalTypeToCType(ti.baseType);
-        if (ti.baseType == "string") {
-            for (auto& name : node.names) {
-                emitLine(cType + " " + name + ";");
-            }
-        } else {
-            emitIndent();
-            emit(cType + " ");
-            for (size_t i = 0; i < node.names.size(); ++i) {
-                if (i > 0) emit(", ");
-                emit(node.names[i]);
-            }
-            emit(";\n");
+        emitIndent();
+        emit(cType + " ");
+        for (size_t i = 0; i < node.names.size(); ++i) {
+            if (i > 0) emit(", ");
+            emit(node.names[i]);
         }
+        emit(";\n");
     }
 }
 
@@ -502,9 +543,9 @@ void CCodeGenerator::visitForStmt(ForStmtNode& node) {
     emitIndent();
     emit("for (" + node.iterator + " = ");
     if (node.startExpr) emitExpr(node.startExpr.get());
-    emit("; " + node.iterator + " <= ");
+    emit(node.descending ? "; " + node.iterator + " >= " : "; " + node.iterator + " <= ");
     if (node.endExpr) emitExpr(node.endExpr.get());
-    emit("; " + node.iterator + "++) ");
+    emit(node.descending ? "; " + node.iterator + "--) " : "; " + node.iterator + "++) ");
 
     if (node.body) {
         auto* cs = dynamic_cast<CompoundStmtNode*>(node.body.get());

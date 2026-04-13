@@ -9,7 +9,23 @@ std::string TypeInfo::toString() const {
         return "array[" + std::to_string(arrayLow) + ".." +
                std::to_string(arrayHigh) + "] of " + elementType;
     }
+    if (category == Category::Record) {
+        std::string result = "record{";
+        for (size_t i = 0; i < recordFields.size(); ++i) {
+            if (i > 0) result += ";";
+            result += recordFields[i].first + ":" + recordFields[i].second.toString();
+        }
+        result += "}";
+        return result;
+    }
     return baseType;
+}
+
+const TypeInfo* TypeInfo::findField(const std::string& fieldName) const {
+    for (const auto& field : recordFields) {
+        if (field.first == fieldName) return &field.second;
+    }
+    return nullptr;
 }
 
 TypeInfo TypeInfo::makeSimple(const std::string& base) {
@@ -29,7 +45,41 @@ TypeInfo TypeInfo::makeArray(int low, int high, const std::string& elemType) {
     return t;
 }
 
+TypeInfo TypeInfo::makeRecord(const std::vector<std::pair<std::string, TypeInfo>>& fields) {
+    TypeInfo t;
+    t.category = Category::Record;
+    t.baseType = "record";
+    t.recordFields = fields;
+    return t;
+}
+
 TypeInfo TypeInfo::fromString(const std::string& typeStr) {
+    auto trim = [](const std::string& text) {
+        const auto first = text.find_first_not_of(" \t\r\n");
+        if (first == std::string::npos) return std::string{};
+        const auto last = text.find_last_not_of(" \t\r\n");
+        return text.substr(first, last - first + 1);
+    };
+
+    auto splitTopLevel = [](const std::string& text, char delimiter) {
+        std::vector<std::string> parts;
+        int bracketDepth = 0;
+        int braceDepth = 0;
+        size_t start = 0;
+        for (size_t i = 0; i < text.size(); ++i) {
+            if (text[i] == '[') ++bracketDepth;
+            else if (text[i] == ']') --bracketDepth;
+            else if (text[i] == '{') ++braceDepth;
+            else if (text[i] == '}') --braceDepth;
+            else if (text[i] == delimiter && bracketDepth == 0 && braceDepth == 0) {
+                parts.push_back(text.substr(start, i - start));
+                start = i + 1;
+            }
+        }
+        parts.push_back(text.substr(start));
+        return parts;
+    };
+
     // Format: "array[low..high] of elemType"  or  "integer" / "real" / ...
     if (typeStr.size() >= 5 && typeStr.substr(0, 5) == "array") {
         auto bracketStart = typeStr.find('[');
@@ -56,6 +106,20 @@ TypeInfo TypeInfo::fromString(const std::string& typeStr) {
                 return makeArray(low, high, elemType);
             }
         }
+    }
+    if (typeStr.size() >= 8 && typeStr.substr(0, 7) == "record{" && typeStr.back() == '}') {
+        std::string body = typeStr.substr(7, typeStr.size() - 8);
+        std::vector<std::pair<std::string, TypeInfo>> fields;
+        for (const auto& rawField : splitTopLevel(body, ';')) {
+            auto fieldDecl = trim(rawField);
+            if (fieldDecl.empty()) continue;
+            auto colonPos = fieldDecl.find(':');
+            if (colonPos == std::string::npos) continue;
+            std::string fieldName = trim(fieldDecl.substr(0, colonPos));
+            std::string fieldType = trim(fieldDecl.substr(colonPos + 1));
+            fields.push_back({fieldName, fromString(fieldType)});
+        }
+        return makeRecord(fields);
     }
     return makeSimple(typeStr);
 }

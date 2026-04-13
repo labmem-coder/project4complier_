@@ -143,6 +143,22 @@ std::string typeNameFromBasic(const SemanticValue& value) {
     return stringValue(value);
 }
 
+std::string encodeRecordType(const DeclNodeList& fieldDecls) {
+    std::string encoded = "record{";
+    bool firstField = true;
+    for (const auto& decl : fieldDecls) {
+        auto varDecl = std::dynamic_pointer_cast<VarDeclNode>(decl);
+        if (!varDecl) continue;
+        for (const auto& name : varDecl->names) {
+            if (!firstField) encoded += ";";
+            encoded += name + ":" + varDecl->typeName;
+            firstField = false;
+        }
+    }
+    encoded += "}";
+    return encoded;
+}
+
 ExprNodePtr literalExprFromToken(const Token& token, const std::string& prefix = "") {
     auto lit = std::make_shared<LiteralExprNode>();
     if (token.type == TokenType::NUM) {
@@ -715,12 +731,64 @@ void Parser::registerDefaultActions() {
         if (rhsEquals(p, {"array", "[", "period", "]", "of", "basic_type"})) {
             return "array[" + stringValue(v[2]) + "] of " + typeNameFromBasic(v[5]);
         }
+        if (rhsEquals(p, {"record", "record_field_decl_list", "end"})) {
+            return encodeRecordType(declListValue(v[1]));
+        }
         return std::monostate{};
     });
 
     // --- basic_type ---
     registerAction("basic_type", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
         if (p.rhs.size() == 1) return tokenLexeme(v[0]);
+        return std::monostate{};
+    });
+
+    registerAction("record_field_decl_list", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (rhsEquals(p, {"idlist", ":", "type", ";", "record_field_decl_list_tail"})) {
+            DeclNodeList fields;
+            auto node = std::make_shared<VarDeclNode>();
+            node->names = stringListValue(v[0]);
+            node->typeName = stringValue(v[2]);
+            fields.push_back(node);
+            appendDeclList(fields, declListValue(v[4]));
+            return fields;
+        }
+        if (rhsEquals(p, {"id", "idlist'", ":", "type", ";", "record_field_decl_list_tail"})) {
+            DeclNodeList fields;
+            auto node = std::make_shared<VarDeclNode>();
+            node->names.push_back(tokenLexeme(v[0]));
+            auto tailNames = stringListValue(v[1]);
+            node->names.insert(node->names.end(), tailNames.begin(), tailNames.end());
+            node->typeName = stringValue(v[3]);
+            fields.push_back(node);
+            appendDeclList(fields, declListValue(v[5]));
+            return fields;
+        }
+        return std::monostate{};
+    });
+
+    registerAction("record_field_decl_list_tail", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (rhsEquals(p, {"idlist", ":", "type", ";", "record_field_decl_list_tail"})) {
+            DeclNodeList fields;
+            auto node = std::make_shared<VarDeclNode>();
+            node->names = stringListValue(v[0]);
+            node->typeName = stringValue(v[2]);
+            fields.push_back(node);
+            appendDeclList(fields, declListValue(v[4]));
+            return fields;
+        }
+        if (rhsEquals(p, {"id", "idlist'", ":", "type", ";", "record_field_decl_list_tail"})) {
+            DeclNodeList fields;
+            auto node = std::make_shared<VarDeclNode>();
+            node->names.push_back(tokenLexeme(v[0]));
+            auto tailNames = stringListValue(v[1]);
+            node->names.insert(node->names.end(), tailNames.begin(), tailNames.end());
+            node->typeName = stringValue(v[3]);
+            fields.push_back(node);
+            appendDeclList(fields, declListValue(v[5]));
+            return fields;
+        }
+        if (p.rhs.empty()) return DeclNodeList{};
         return std::monostate{};
     });
 
@@ -953,6 +1021,7 @@ void Parser::registerDefaultActions() {
             if (tail.kind == StatementTail::Kind::IndexedAssign) {
                 target->indices = tail.expressions;
             }
+            target->fields = tail.fields;
             assign->target = std::static_pointer_cast<ExprNode>(target);
             assign->value = tail.value;
             return std::static_pointer_cast<StmtNode>(assign);
@@ -969,11 +1038,12 @@ void Parser::registerDefaultActions() {
             node->elseStmt = stmtValue(v[4]);
             return std::static_pointer_cast<StmtNode>(node);
         }
-        if (rhsEquals(p, {"for", "id", "assignop", "expression", "to", "expression", "do", "statement"})) {
+        if (rhsEquals(p, {"for", "id", "assignop", "expression", "for_direction", "expression", "do", "statement"})) {
             auto node = std::make_shared<ForStmtNode>();
             node->iterator = tokenLexeme(v[1]);
             node->startExpr = exprValue(v[3]);
             node->endExpr = exprValue(v[5]);
+            node->descending = (stringValue(v[4]) == "downto");
             node->body = stmtValue(v[7]);
             return std::static_pointer_cast<StmtNode>(node);
         }
@@ -1013,25 +1083,65 @@ void Parser::registerDefaultActions() {
         return std::monostate{};
     });
 
+    registerAction("for_direction", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (p.rhs.size() == 1) return tokenLexeme(v[0]);
+        return std::monostate{};
+    });
+
     // --- statement_id_tail ---
     registerAction("statement_id_tail", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (rhsEquals(p, {"statement_access_tail"})) {
+            return statementTailValue(v[0]);
+        }
+        if (rhsEquals(p, {"id_varpart", "assignop", "expression"})) {
+            StatementTail tail;
+            auto variable = std::dynamic_pointer_cast<VariableExprNode>(exprValue(v[0]));
+            if (variable) {
+                tail.kind = variable->indices.empty() ? StatementTail::Kind::Assign
+                                                      : StatementTail::Kind::IndexedAssign;
+                tail.expressions = variable->indices;
+                tail.fields = variable->fields;
+            } else {
+                tail.kind = StatementTail::Kind::Assign;
+            }
+            tail.value = exprValue(v[2]);
+            return tail;
+        }
         if (rhsEquals(p, {"assignop", "expression"})) {
             StatementTail tail;
             tail.kind = StatementTail::Kind::Assign;
             tail.value = exprValue(v[1]);
             return tail;
         }
-        if (rhsEquals(p, {"[", "expression_list", "]", "assignop", "expression"})) {
-            StatementTail tail;
-            tail.kind = StatementTail::Kind::IndexedAssign;
-            tail.expressions = exprListValue(v[1]);
-            tail.value = exprValue(v[4]);
-            return tail;
-        }
         if (rhsEquals(p, {"(", "expression_list", ")"})) {
             StatementTail tail;
             tail.kind = StatementTail::Kind::Call;
             tail.expressions = exprListValue(v[1]);
+            return tail;
+        }
+        if (p.rhs.empty()) return StatementTail{};
+        return std::monostate{};
+    });
+
+    registerAction("statement_access_tail", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (rhsEquals(p, {"id_varpart", "assignop", "expression"})) {
+            StatementTail tail;
+            auto variable = std::dynamic_pointer_cast<VariableExprNode>(exprValue(v[0]));
+            if (variable) {
+                tail.kind = variable->indices.empty() ? StatementTail::Kind::Assign
+                                                      : StatementTail::Kind::IndexedAssign;
+                tail.expressions = variable->indices;
+                tail.fields = variable->fields;
+            } else {
+                tail.kind = StatementTail::Kind::Assign;
+            }
+            tail.value = exprValue(v[2]);
+            return tail;
+        }
+        if (rhsEquals(p, {"assignop", "expression"})) {
+            StatementTail tail;
+            tail.kind = StatementTail::Kind::Assign;
+            tail.value = exprValue(v[1]);
             return tail;
         }
         if (p.rhs.empty()) return StatementTail{};
@@ -1165,7 +1275,11 @@ void Parser::registerDefaultActions() {
         if (rhsEquals(p, {"id", "id_varpart"})) {
             auto variable = std::make_shared<VariableExprNode>();
             variable->name = tokenLexeme(v[0]);
-            variable->indices = exprListValue(v[1]);
+            auto suffix = std::dynamic_pointer_cast<VariableExprNode>(exprValue(v[1]));
+            if (suffix) {
+                variable->indices = suffix->indices;
+                variable->fields = suffix->fields;
+            }
             return std::static_pointer_cast<ExprNode>(variable);
         }
         return std::monostate{};
@@ -1173,8 +1287,28 @@ void Parser::registerDefaultActions() {
 
     // --- id_varpart ---
     registerAction("id_varpart", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
-        if (p.rhs.empty()) return ExprNodeList{};
-        if (rhsEquals(p, {"[", "expression_list", "]"})) return exprListValue(v[1]);
+        auto suffix = std::make_shared<VariableExprNode>();
+        if (p.rhs.empty()) return std::static_pointer_cast<ExprNode>(suffix);
+        if (rhsEquals(p, {"field_chain"})) {
+            suffix->fields = stringListValue(v[0]);
+            return std::static_pointer_cast<ExprNode>(suffix);
+        }
+        if (rhsEquals(p, {"[", "expression_list", "]", "field_chain"})) {
+            suffix->indices = exprListValue(v[1]);
+            suffix->fields = stringListValue(v[3]);
+            return std::static_pointer_cast<ExprNode>(suffix);
+        }
+        return std::monostate{};
+    });
+
+    registerAction("field_chain", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (rhsEquals(p, {".", "id", "field_chain"})) {
+            std::vector<std::string> fields{tokenLexeme(v[1])};
+            auto tail = stringListValue(v[2]);
+            fields.insert(fields.end(), tail.begin(), tail.end());
+            return fields;
+        }
+        if (p.rhs.empty()) return std::vector<std::string>{};
         return std::monostate{};
     });
 
@@ -1311,6 +1445,7 @@ void Parser::registerDefaultActions() {
             if (tail.kind == FactorTail::Kind::Index) {
                 variable->indices = tail.expressions;
             }
+            variable->fields = tail.fields;
             return std::static_pointer_cast<ExprNode>(variable);
         }
         if (rhsEquals(p, {"(", "expression", ")"})) return exprValue(v[1]);
@@ -1331,16 +1466,36 @@ void Parser::registerDefaultActions() {
 
     // --- factor_id_tail ---
     registerAction("factor_id_tail", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
-        if (rhsEquals(p, {"[", "expression_list", "]"})) {
+        if (rhsEquals(p, {"[", "expression_list", "]", "field_chain"})) {
             FactorTail tail;
             tail.kind = FactorTail::Kind::Index;
             tail.expressions = exprListValue(v[1]);
+            tail.fields = stringListValue(v[3]);
+            return tail;
+        }
+        if (rhsEquals(p, {".", "id", "field_chain"})) {
+            FactorTail tail;
+            tail.kind = FactorTail::Kind::None;
+            tail.fields = std::vector<std::string>{tokenLexeme(v[1])};
+            auto rest = stringListValue(v[2]);
+            tail.fields.insert(tail.fields.end(), rest.begin(), rest.end());
             return tail;
         }
         if (rhsEquals(p, {"(", "expression_list", ")"})) {
             FactorTail tail;
             tail.kind = FactorTail::Kind::Call;
             tail.expressions = exprListValue(v[1]);
+            return tail;
+        }
+        if (rhsEquals(p, {"id_varpart"})) {
+            FactorTail tail;
+            auto variable = std::dynamic_pointer_cast<VariableExprNode>(exprValue(v[0]));
+            if (variable) {
+                tail.kind = variable->indices.empty() ? FactorTail::Kind::None
+                                                      : FactorTail::Kind::Index;
+                tail.expressions = variable->indices;
+                tail.fields = variable->fields;
+            }
             return tail;
         }
         if (p.rhs.empty()) return FactorTail{};

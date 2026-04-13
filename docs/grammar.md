@@ -185,3 +185,61 @@ statement -> epsilon
 2. 本轮补充的是文法、AST、语义分析、C 代码生成和集成测试
 3. 语义规则：while 条件必须为 boolean
 ```
+
+### 6.8 `downto` 方向的 `for` 语句扩展
+
+为支持 `for i := start downto finish do statement`，将原先固定递增方向的产生式扩展为：
+
+```text
+statement -> ... | for id assignop expression for_direction expression do statement | ...
+for_direction -> to | downto
+```
+
+对应实现说明：
+
+1. 词法阶段将 `downto` 识别为关键字
+2. AST 中 `ForStmtNode` 通过 `descending` 标记区分 `to` 与 `downto`
+3. 语义阶段要求迭代变量、起始表达式和终止表达式都为 `integer`
+4. C 代码生成时：
+   `to` 映射为 `for (...; i <= end; i++)`
+   `downto` 映射为 `for (...; i >= end; i--)`
+
+### 6.9 `record` 类型与字段访问扩展
+
+为支持记录类型声明与字段访问，补充以下文法：
+
+```text
+type -> basic_type
+      | array [ period ] of basic_type
+      | record record_field_decl_list end
+
+record_field_decl_list -> idlist : type ; record_field_decl_list_tail
+record_field_decl_list_tail -> idlist : type ; record_field_decl_list_tail | epsilon
+
+id_varpart -> [ expression_list ] field_chain
+           | field_chain
+           | epsilon
+
+field_chain -> . id field_chain | epsilon
+
+statement_id_tail -> ( expression_list )
+                   | id_varpart assignop expression
+                   | epsilon
+
+factor_id_tail -> id_varpart
+                | ( expression_list )
+```
+
+对应实现说明：
+
+1. 记录类型在 parser 内部编码为统一的字符串表示，例如：
+   `record{name:string;age:integer}`
+2. 语义分析会检查：
+   记录字段是否重复
+   字段是否存在
+   是否对非记录值进行字段访问
+3. C 代码生成时，`record` 会映射为匿名 `struct`
+4. 当前实现已支持：
+   记录变量声明
+   记录字段赋值
+   在表达式、`write`、`read` 中访问字段

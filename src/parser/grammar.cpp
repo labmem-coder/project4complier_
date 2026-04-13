@@ -395,6 +395,14 @@ bool Grammar::buildParseTable() {
     parseTable.clear();
     bool isLL1 = true;
 
+    auto preferLongerForKnownTail = [&](const Production& existingProd, const Production& newProd) {
+        const bool knownTail =
+            (existingProd.lhs == "statement_id_tail" || existingProd.lhs == "factor_id_tail");
+        if (!knownTail) return false;
+        if (existingProd.rhs.empty() != newProd.rhs.empty()) return false;
+        return newProd.rhs.size() > existingProd.rhs.size();
+    };
+
     // Track which entries come from epsilon productions (for conflict resolution)
     std::map<std::string, std::map<std::string, bool>> isEpsilonEntry;
 
@@ -417,6 +425,9 @@ bool Grammar::buildParseTable() {
                     std::cerr << "[INFO] Resolved conflict for " << p.lhs << " on '" << a
                               << "': keep non-epsilon production " << parseTable[p.lhs][a] << "\n";
                     continue;
+                } else if (preferLongerForKnownTail(productions[parseTable[p.lhs][a]], p)) {
+                    std::cerr << "[INFO] Resolved conflict for " << p.lhs << " on '" << a
+                              << "': prefer longer production " << i << "\n";
                 } else {
                     std::cerr << "[WARNING] LL(1) conflict: " << p.lhs << " on terminal '" << a
                               << "' (productions " << parseTable[p.lhs][a] << " and " << i << ")\n";
@@ -437,6 +448,9 @@ bool Grammar::buildParseTable() {
                     } else if (existingIsEps && !thisIsEpsilon) {
                         std::cerr << "[INFO] Resolved conflict for " << p.lhs << " on '" << b
                                   << "': prefer non-epsilon production " << i << "\n";
+                    } else if (preferLongerForKnownTail(productions[parseTable[p.lhs][b]], p)) {
+                        std::cerr << "[INFO] Resolved conflict for " << p.lhs << " on '" << b
+                                  << "': prefer longer production " << i << "\n";
                     } else {
                         std::cerr << "[WARNING] LL(1) conflict: " << p.lhs << " on terminal '" << b
                                   << "' (productions " << parseTable[p.lhs][b] << " and " << i << ")\n";
@@ -658,6 +672,8 @@ Grammar buildPascalSGrammar() {
     g.addProduction("statement_access_tail", split("id_varpart assignop expression"));
     g.addProduction("statement_id_tail", split("statement_access_tail"));
     g.addProduction("statement_id_tail", split("( expression_list )"));          // procedure call with args
+    // direct assignment is covered by id_varpart -> epsilon
+    g.addProduction("statement_access_tail", {}); // bare procedure call (just id)
     g.addProduction("statement_id_tail", {}); // ε -- bare procedure call (just id)
 
     // variable_list -> variable variable_list'
@@ -667,8 +683,11 @@ Grammar buildPascalSGrammar() {
     g.addProduction("variable_list'", {}); // ε
 
     g.addProduction("variable", split("id id_varpart"));
+    g.addProduction("id_varpart", split("field_chain"));
     g.addProduction("id_varpart", {}); // ε
-    g.addProduction("id_varpart", split("[ expression_list ]"));
+    g.addProduction("id_varpart", split("[ expression_list ] field_chain"));
+    g.addProduction("field_chain", split(". id field_chain"));
+    g.addProduction("field_chain", {});
 
     // 5. Expressions
     g.addProduction("else_part", {}); // ε
@@ -713,7 +732,7 @@ Grammar buildPascalSGrammar() {
     g.addProduction("factor", split("not factor"));
     g.addProduction("factor", split("- factor"));
 
-    g.addProduction("factor_id_tail", split("[ expression_list ]"));
+    g.addProduction("factor_id_tail", split("id_varpart"));
     g.addProduction("factor_id_tail", split("( expression_list )"));
     g.addProduction("factor_id_tail", {}); // ε (just a variable = id)
 

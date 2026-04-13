@@ -1,6 +1,7 @@
 #include "semantic_analyzer.h"
 #include <algorithm>
 #include <cctype>
+#include <functional>
 #include <set>
 
 // ---------------------------------------------------------------------------
@@ -42,15 +43,24 @@ TypeInfo SemanticAnalyzer::inferType(ExprNode* expr) {
             auto* ve = static_cast<VariableExprNode*>(expr);
             Symbol* sym = symTable_.lookup(ve->name);
             if (!sym) return TypeInfo::makeSimple("void");
-            if (sym->kind == SymbolKind::Function && ve->indices.empty()) {
+            if (sym->kind == SymbolKind::Function && ve->indices.empty() && ve->fields.empty()) {
                 return TypeInfo::makeSimple(sym->returnType);
             }
-            if (sym->type.isArray()) {
-                if (!ve->indices.empty())
-                    return TypeInfo::makeSimple(sym->type.elementType); // indexed access
-                return sym->type;  // whole array
+            TypeInfo current = sym->type;
+            if (current.isArray()) {
+                if (!ve->indices.empty()) {
+                    current = TypeInfo::fromString(current.elementType);
+                } else {
+                    return current;
+                }
             }
-            return sym->type;
+            for (const auto& field : ve->fields) {
+                if (!current.isRecord()) return TypeInfo::makeSimple("void");
+                const TypeInfo* fieldType = current.findField(field);
+                if (!fieldType) return TypeInfo::makeSimple("void");
+                current = *fieldType;
+            }
+            return current;
         }
 
         case ASTNodeKind::LiteralExpr: {
@@ -178,9 +188,21 @@ void SemanticAnalyzer::visitConstDecl(ConstDeclNode& node) {
 
 void SemanticAnalyzer::visitVarDecl(VarDeclNode& node) {
     TypeInfo ti = TypeInfo::fromString(node.typeName);
+    std::function<void(const TypeInfo&, const std::string&)> validateRecordType =
+        [&](const TypeInfo& type, const std::string& owner) {
+            if (!type.isRecord()) return;
+            std::set<std::string> seen;
+            for (const auto& field : type.recordFields) {
+                if (!seen.insert(field.first).second) {
+                    addError("Duplicate field declaration '" + field.first + "' in " + owner);
+                }
+                validateRecordType(field.second, "record field '" + field.first + "'");
+            }
+        };
     if (ti.isArray() && ti.arrayLow > ti.arrayHigh) {
         addError("Invalid array bounds in declaration: lower bound exceeds upper bound");
     }
+    validateRecordType(ti, "record type");
     for (auto& name : node.names) {
         Symbol sym;
         sym.name = name;
@@ -352,6 +374,12 @@ void SemanticAnalyzer::visitForStmt(ForStmtNode& node) {
     }
     if (node.startExpr) node.startExpr->accept(*this);
     if (node.endExpr)   node.endExpr->accept(*this);
+    if (node.startExpr && !inferType(node.startExpr.get()).isInteger()) {
+        addError("For-loop start expression must be integer");
+    }
+    if (node.endExpr && !inferType(node.endExpr.get()).isInteger()) {
+        addError("For-loop end expression must be integer");
+    }
     ++loopDepth_;
     if (node.body)      node.body->accept(*this);
     --loopDepth_;
@@ -432,7 +460,15 @@ void SemanticAnalyzer::visitVariableExpr(VariableExprNode& node) {
     Symbol* sym = symTable_.lookup(node.name);
     if (!sym) {
         addError("Undeclared identifier: '" + node.name + "'");
-    } else if (sym->type.isArray() && !node.indices.empty()) {
+        return;
+    }
+
+    TypeInfo current = sym->type;
+    if (!node.indices.empty()) {
+        if (!current.isArray()) {
+            addError("'" + node.name + "' is not an array");
+            return;
+        }
         for (auto& idx : node.indices) {
             if (idx) {
                 idx->accept(*this);
@@ -443,16 +479,30 @@ void SemanticAnalyzer::visitVariableExpr(VariableExprNode& node) {
                     literal && idxType.isInteger()) {
                     try {
                         int value = std::stoi(literal->value);
-                        if (value < sym->type.arrayLow || value > sym->type.arrayHigh) {
+                        if (value < current.arrayLow || value > current.arrayHigh) {
                             addError("Array index " + std::to_string(value) + " out of bounds for '" +
-                                     node.name + "' [" + std::to_string(sym->type.arrayLow) + ".." +
-                                     std::to_string(sym->type.arrayHigh) + "]");
+                                     node.name + "' [" + std::to_string(current.arrayLow) + ".." +
+                                     std::to_string(current.arrayHigh) + "]");
                         }
                     } catch (...) {
                     }
                 }
             }
         }
+        current = TypeInfo::fromString(current.elementType);
+    }
+
+    for (const auto& field : node.fields) {
+        if (!current.isRecord()) {
+            addError("Cannot access field '" + field + "' on non-record '" + node.name + "'");
+            return;
+        }
+        const TypeInfo* fieldType = current.findField(field);
+        if (!fieldType) {
+            addError("Record '" + node.name + "' has no field '" + field + "'");
+            return;
+        }
+        current = *fieldType;
     }
 }
 
