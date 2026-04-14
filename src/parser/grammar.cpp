@@ -403,6 +403,14 @@ bool Grammar::buildParseTable() {
         return newProd.rhs.size() > existingProd.rhs.size();
     };
 
+    auto preferExistingKnownTail = [&](const Production& existingProd, const Production& newProd) {
+        const bool knownTail =
+            (existingProd.lhs == "statement_id_tail" || existingProd.lhs == "factor_id_tail");
+        if (!knownTail) return false;
+        if (existingProd.rhs.empty() || newProd.rhs.empty()) return true;
+        return existingProd.rhs == newProd.rhs;
+    };
+
     // Track which entries come from epsilon productions (for conflict resolution)
     std::map<std::string, std::map<std::string, bool>> isEpsilonEntry;
 
@@ -413,52 +421,54 @@ bool Grammar::buildParseTable() {
 
         for (auto& a : firstAlpha) {
             if (a == "ε") continue;
+            bool shouldWriteEntry = true;
             if (parseTable[p.lhs].count(a)) {
                 // Conflict resolution: prefer non-epsilon production (e.g., dangling else)
                 bool existingIsEps = isEpsilonEntry[p.lhs][a];
                 if (existingIsEps && !thisIsEpsilon) {
                     // Overwrite epsilon entry with non-epsilon (standard resolution)
-                    std::cerr << "[INFO] Resolved conflict for " << p.lhs << " on '" << a
-                              << "': prefer non-epsilon production " << i << "\n";
                 } else if (!existingIsEps && thisIsEpsilon) {
                     // Keep existing non-epsilon entry
-                    std::cerr << "[INFO] Resolved conflict for " << p.lhs << " on '" << a
-                              << "': keep non-epsilon production " << parseTable[p.lhs][a] << "\n";
-                    continue;
+                    shouldWriteEntry = false;
                 } else if (preferLongerForKnownTail(productions[parseTable[p.lhs][a]], p)) {
-                    std::cerr << "[INFO] Resolved conflict for " << p.lhs << " on '" << a
-                              << "': prefer longer production " << i << "\n";
+                } else if (preferExistingKnownTail(productions[parseTable[p.lhs][a]], p)) {
+                    shouldWriteEntry = false;
                 } else {
                     std::cerr << "[WARNING] LL(1) conflict: " << p.lhs << " on terminal '" << a
                               << "' (productions " << parseTable[p.lhs][a] << " and " << i << ")\n";
                     isLL1 = false;
+                    shouldWriteEntry = false;
                 }
             }
-            parseTable[p.lhs][a] = i;
-            isEpsilonEntry[p.lhs][a] = thisIsEpsilon;
+            if (shouldWriteEntry) {
+                parseTable[p.lhs][a] = i;
+                isEpsilonEntry[p.lhs][a] = thisIsEpsilon;
+            }
         }
 
         if (firstAlpha.count("ε")) {
             for (auto& b : followSets[p.lhs]) {
+                bool shouldWriteEntry = true;
                 if (parseTable[p.lhs].count(b)) {
                     bool existingIsEps = isEpsilonEntry[p.lhs][b];
                     if (!existingIsEps && thisIsEpsilon) {
                         // Keep existing non-epsilon entry (dangling else resolution)
-                        continue;
+                        shouldWriteEntry = false;
                     } else if (existingIsEps && !thisIsEpsilon) {
-                        std::cerr << "[INFO] Resolved conflict for " << p.lhs << " on '" << b
-                                  << "': prefer non-epsilon production " << i << "\n";
                     } else if (preferLongerForKnownTail(productions[parseTable[p.lhs][b]], p)) {
-                        std::cerr << "[INFO] Resolved conflict for " << p.lhs << " on '" << b
-                                  << "': prefer longer production " << i << "\n";
+                    } else if (preferExistingKnownTail(productions[parseTable[p.lhs][b]], p)) {
+                        shouldWriteEntry = false;
                     } else {
                         std::cerr << "[WARNING] LL(1) conflict: " << p.lhs << " on terminal '" << b
                                   << "' (productions " << parseTable[p.lhs][b] << " and " << i << ")\n";
                         isLL1 = false;
+                        shouldWriteEntry = false;
                     }
                 }
-                parseTable[p.lhs][b] = i;
-                isEpsilonEntry[p.lhs][b] = thisIsEpsilon;
+                if (shouldWriteEntry) {
+                    parseTable[p.lhs][b] = i;
+                    isEpsilonEntry[p.lhs][b] = thisIsEpsilon;
+                }
             }
         }
     }
@@ -669,11 +679,9 @@ Grammar buildPascalSGrammar() {
     g.addProduction("case_label_list'", {}); // 蔚
 
     // statement_id_tail handles the ambiguity of id starting variable/func_id/procedure_call
-    g.addProduction("statement_access_tail", split("id_varpart assignop expression"));
-    g.addProduction("statement_id_tail", split("statement_access_tail"));
+    g.addProduction("statement_id_tail", split("id_varpart assignop expression"));
     g.addProduction("statement_id_tail", split("( expression_list )"));          // procedure call with args
     // direct assignment is covered by id_varpart -> epsilon
-    g.addProduction("statement_access_tail", {}); // bare procedure call (just id)
     g.addProduction("statement_id_tail", {}); // ε -- bare procedure call (just id)
 
     // variable_list -> variable variable_list'

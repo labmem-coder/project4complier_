@@ -28,14 +28,37 @@ std::string tokenLexeme(const SemanticValue& value) {
     return "";
 }
 
+std::pair<int, int> valueLocation(const SemanticValue& value) {
+    if (const auto* token = std::get_if<Token>(&value)) return {token->line, token->column};
+    if (const auto* node = std::get_if<DeclNodePtr>(&value); node && *node) return {(*node)->line, (*node)->column};
+    if (const auto* node = std::get_if<StmtNodePtr>(&value); node && *node) return {(*node)->line, (*node)->column};
+    if (const auto* node = std::get_if<ExprNodePtr>(&value); node && *node) return {(*node)->line, (*node)->column};
+    if (const auto* node = std::get_if<BlockNodePtr>(&value); node && *node) return {(*node)->line, (*node)->column};
+    if (const auto* node = std::get_if<ProgramNodePtr>(&value); node && *node) return {(*node)->line, (*node)->column};
+    return {0, 0};
+}
+
+template <typename NodePtrT>
+void setNodeLocationFromValue(const NodePtrT& node, const SemanticValue& value) {
+    if (!node) return;
+    auto [line, column] = valueLocation(value);
+    node->setLocation(line, column);
+}
+
 std::string stringValue(const SemanticValue& value) {
     if (const auto* text = std::get_if<std::string>(&value)) return *text;
     return "";
 }
 
 std::vector<std::string> stringListValue(const SemanticValue& value) {
+    if (const auto* texts = std::get_if<LocatedStringList>(&value)) return texts->values;
     if (const auto* texts = std::get_if<std::vector<std::string>>(&value)) return *texts;
     return {};
+}
+
+std::pair<int, int> stringListLocation(const SemanticValue& value) {
+    if (const auto* texts = std::get_if<LocatedStringList>(&value)) return {texts->line, texts->column};
+    return {0, 0};
 }
 
 DeclNodePtr declValue(const SemanticValue& value) {
@@ -133,6 +156,7 @@ ExprNodePtr foldLeftAssociative(const ExprNodePtr& left, const ExprChain& chain)
         binary->op = item.first;
         binary->left = current;
         binary->right = item.second;
+        if (current) binary->setLocation(current->line, current->column);
         current = binary;
     }
     return current;
@@ -543,17 +567,20 @@ void Parser::registerDefaultActions() {
             auto prog = std::make_shared<ProgramNode>();
             prog->name = tokenLexeme(v[1]);
             prog->parameters = stringListValue(v[3]);
+            setNodeLocationFromValue(prog, v[1]);
             return prog;
         }
         if (rhsEquals(p, {"program", "id", "program_head'"})) {
             auto prog = std::make_shared<ProgramNode>();
             prog->name = tokenLexeme(v[1]);
             prog->parameters = stringListValue(v[2]);
+            setNodeLocationFromValue(prog, v[1]);
             return prog;
         }
         if (rhsEquals(p, {"program", "id"})) {
             auto prog = std::make_shared<ProgramNode>();
             prog->name = tokenLexeme(v[1]);
+            setNodeLocationFromValue(prog, v[1]);
             return prog;
         }
         return std::monostate{};
@@ -583,9 +610,13 @@ void Parser::registerDefaultActions() {
     // --- idlist / idlist' ---
     registerAction("idlist", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
         if (rhsEquals(p, {"id", "idlist'"})) {
-            std::vector<std::string> names{tokenLexeme(v[0])};
+            LocatedStringList names;
+            names.values.push_back(tokenLexeme(v[0]));
+            auto [line, column] = valueLocation(v[0]);
+            names.line = line;
+            names.column = column;
             auto tail = stringListValue(v[1]);
-            names.insert(names.end(), tail.begin(), tail.end());
+            names.values.insert(names.values.end(), tail.begin(), tail.end());
             return names;
         }
         return std::monostate{};
@@ -593,12 +624,16 @@ void Parser::registerDefaultActions() {
 
     registerAction("idlist'", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
         if (rhsEquals(p, {",", "id", "idlist'"})) {
-            std::vector<std::string> names{tokenLexeme(v[1])};
+            LocatedStringList names;
+            names.values.push_back(tokenLexeme(v[1]));
+            auto [line, column] = valueLocation(v[1]);
+            names.line = line;
+            names.column = column;
             auto tail = stringListValue(v[2]);
-            names.insert(names.end(), tail.begin(), tail.end());
+            names.values.insert(names.values.end(), tail.begin(), tail.end());
             return names;
         }
-        if (p.rhs.empty()) return std::vector<std::string>{};
+        if (p.rhs.empty()) return LocatedStringList{};
         return std::monostate{};
     });
 
@@ -616,6 +651,7 @@ void Parser::registerDefaultActions() {
             auto node = std::make_shared<ConstDeclNode>();
             node->name = tokenLexeme(v[0]);
             node->value = exprValue(v[2]);
+            setNodeLocationFromValue(node, v[0]);
             decls.push_back(node);
             appendDeclList(decls, declListValue(v[4]));
             return decls;
@@ -630,6 +666,7 @@ void Parser::registerDefaultActions() {
             auto node = std::make_shared<ConstDeclNode>();
             node->name = tokenLexeme(v[0]);
             node->value = exprValue(v[2]);
+            setNodeLocationFromValue(node, v[0]);
             decls.push_back(node);
             appendDeclList(decls, declListValue(v[4]));
             return decls;
@@ -644,12 +681,14 @@ void Parser::registerDefaultActions() {
             auto lit = std::make_shared<LiteralExprNode>();
             lit->literalType = "num";
             lit->value = "+" + tokenLexeme(v[1]);
+            setNodeLocationFromValue(lit, v[1]);
             return std::static_pointer_cast<ExprNode>(lit);
         }
         if (rhsEquals(p, {"-", "num"})) {
             auto lit = std::make_shared<LiteralExprNode>();
             lit->literalType = "num";
             lit->value = "-" + tokenLexeme(v[1]);
+            setNodeLocationFromValue(lit, v[1]);
             return std::static_pointer_cast<ExprNode>(lit);
         }
         if (rhsEquals(p, {"num"})) {
@@ -681,6 +720,8 @@ void Parser::registerDefaultActions() {
             auto node = std::make_shared<VarDeclNode>();
             node->names = stringListValue(v[0]);
             node->typeName = stringValue(v[2]);
+            auto [line, column] = stringListLocation(v[0]);
+            node->setLocation(line, column);
             decls.push_back(node);
             appendDeclList(decls, declListValue(v[4]));
             return decls;
@@ -692,6 +733,7 @@ void Parser::registerDefaultActions() {
             auto tailNames = stringListValue(v[1]);
             node->names.insert(node->names.end(), tailNames.begin(), tailNames.end());
             node->typeName = stringValue(v[3]);
+            setNodeLocationFromValue(node, v[0]);
             decls.push_back(node);
             appendDeclList(decls, declListValue(v[5]));
             return decls;
@@ -706,6 +748,8 @@ void Parser::registerDefaultActions() {
             auto node = std::make_shared<VarDeclNode>();
             node->names = stringListValue(v[0]);
             node->typeName = stringValue(v[2]);
+            auto [line, column] = stringListLocation(v[0]);
+            node->setLocation(line, column);
             decls.push_back(node);
             appendDeclList(decls, declListValue(v[4]));
             return decls;
@@ -717,6 +761,7 @@ void Parser::registerDefaultActions() {
             auto tailNames = stringListValue(v[1]);
             node->names.insert(node->names.end(), tailNames.begin(), tailNames.end());
             node->typeName = stringValue(v[3]);
+            setNodeLocationFromValue(node, v[0]);
             decls.push_back(node);
             appendDeclList(decls, declListValue(v[5]));
             return decls;
@@ -749,6 +794,8 @@ void Parser::registerDefaultActions() {
             auto node = std::make_shared<VarDeclNode>();
             node->names = stringListValue(v[0]);
             node->typeName = stringValue(v[2]);
+            auto [line, column] = stringListLocation(v[0]);
+            node->setLocation(line, column);
             fields.push_back(node);
             appendDeclList(fields, declListValue(v[4]));
             return fields;
@@ -760,6 +807,7 @@ void Parser::registerDefaultActions() {
             auto tailNames = stringListValue(v[1]);
             node->names.insert(node->names.end(), tailNames.begin(), tailNames.end());
             node->typeName = stringValue(v[3]);
+            setNodeLocationFromValue(node, v[0]);
             fields.push_back(node);
             appendDeclList(fields, declListValue(v[5]));
             return fields;
@@ -773,6 +821,8 @@ void Parser::registerDefaultActions() {
             auto node = std::make_shared<VarDeclNode>();
             node->names = stringListValue(v[0]);
             node->typeName = stringValue(v[2]);
+            auto [line, column] = stringListLocation(v[0]);
+            node->setLocation(line, column);
             fields.push_back(node);
             appendDeclList(fields, declListValue(v[4]));
             return fields;
@@ -784,6 +834,7 @@ void Parser::registerDefaultActions() {
             auto tailNames = stringListValue(v[1]);
             node->names.insert(node->names.end(), tailNames.begin(), tailNames.end());
             node->typeName = stringValue(v[3]);
+            setNodeLocationFromValue(node, v[0]);
             fields.push_back(node);
             appendDeclList(fields, declListValue(v[5]));
             return fields;
@@ -848,6 +899,7 @@ void Parser::registerDefaultActions() {
             node->headerKind = "procedure";
             node->name = tokenLexeme(v[1]);
             node->parameters = declListValue(v[2]);
+            setNodeLocationFromValue(node, v[1]);
             return std::static_pointer_cast<DeclNode>(node);
         }
         // function id formal_parameter : basic_type
@@ -857,6 +909,7 @@ void Parser::registerDefaultActions() {
             node->name = tokenLexeme(v[1]);
             node->parameters = declListValue(v[2]);
             node->returnType = typeNameFromBasic(v[4]);
+            setNodeLocationFromValue(node, v[1]);
             return std::static_pointer_cast<DeclNode>(node);
         }
         return std::monostate{};
@@ -921,6 +974,8 @@ void Parser::registerDefaultActions() {
             auto node = std::make_shared<ParamDeclNode>();
             node->names = stringListValue(v[0]);
             node->typeName = typeNameFromBasic(v[2]);
+            auto [line, column] = stringListLocation(v[0]);
+            node->setLocation(line, column);
             return std::static_pointer_cast<DeclNode>(node);
         }
         if (rhsEquals(p, {"id", "idlist'", ":", "basic_type"})) {
@@ -929,6 +984,7 @@ void Parser::registerDefaultActions() {
             auto tail = stringListValue(v[1]);
             node->names.insert(node->names.end(), tail.begin(), tail.end());
             node->typeName = typeNameFromBasic(v[3]);
+            setNodeLocationFromValue(node, v[0]);
             return std::static_pointer_cast<DeclNode>(node);
         }
         return DeclNodePtr{};
@@ -1013,6 +1069,7 @@ void Parser::registerDefaultActions() {
                 auto call = std::make_shared<CallStmtNode>();
                 call->callee = name;
                 call->arguments = tail.expressions;
+                setNodeLocationFromValue(call, v[0]);
                 return std::static_pointer_cast<StmtNode>(call);
             }
             auto assign = std::make_shared<AssignStmtNode>();
@@ -1022,8 +1079,10 @@ void Parser::registerDefaultActions() {
                 target->indices = tail.expressions;
             }
             target->fields = tail.fields;
+            setNodeLocationFromValue(target, v[0]);
             assign->target = std::static_pointer_cast<ExprNode>(target);
             assign->value = tail.value;
+            setNodeLocationFromValue(assign, v[0]);
             return std::static_pointer_cast<StmtNode>(assign);
         }
         if (rhsEquals(p, {"begin", "statement_list", "end"})) {
@@ -1036,6 +1095,7 @@ void Parser::registerDefaultActions() {
             node->condition = exprValue(v[1]);
             node->thenStmt = stmtValue(v[3]);
             node->elseStmt = stmtValue(v[4]);
+            setNodeLocationFromValue(node, v[0]);
             return std::static_pointer_cast<StmtNode>(node);
         }
         if (rhsEquals(p, {"for", "id", "assignop", "expression", "for_direction", "expression", "do", "statement"})) {
@@ -1045,12 +1105,14 @@ void Parser::registerDefaultActions() {
             node->endExpr = exprValue(v[5]);
             node->descending = (stringValue(v[4]) == "downto");
             node->body = stmtValue(v[7]);
+            setNodeLocationFromValue(node, v[0]);
             return std::static_pointer_cast<StmtNode>(node);
         }
         if (rhsEquals(p, {"while", "expression", "do", "statement"})) {
             auto node = std::make_shared<WhileStmtNode>();
             node->condition = exprValue(v[1]);
             node->body = stmtValue(v[3]);
+            setNodeLocationFromValue(node, v[0]);
             return std::static_pointer_cast<StmtNode>(node);
         }
         if (rhsEquals(p, {"case", "expression", "of", "case_branch_list", "end"})) {
@@ -1062,22 +1124,29 @@ void Parser::registerDefaultActions() {
                 astBranch.statement = branch.statement;
                 node->branches.push_back(astBranch);
             }
+            setNodeLocationFromValue(node, v[0]);
             return std::static_pointer_cast<StmtNode>(node);
         }
         if (rhsEquals(p, {"break"})) {
-            return std::static_pointer_cast<StmtNode>(std::make_shared<BreakStmtNode>());
+            auto node = std::make_shared<BreakStmtNode>();
+            setNodeLocationFromValue(node, v[0]);
+            return std::static_pointer_cast<StmtNode>(node);
         }
         if (rhsEquals(p, {"continue"})) {
-            return std::static_pointer_cast<StmtNode>(std::make_shared<ContinueStmtNode>());
+            auto node = std::make_shared<ContinueStmtNode>();
+            setNodeLocationFromValue(node, v[0]);
+            return std::static_pointer_cast<StmtNode>(node);
         }
         if (rhsEquals(p, {"read", "(", "variable_list", ")"})) {
             auto node = std::make_shared<ReadStmtNode>();
             node->variables = exprListValue(v[2]);
+            setNodeLocationFromValue(node, v[0]);
             return std::static_pointer_cast<StmtNode>(node);
         }
         if (rhsEquals(p, {"write", "(", "expression_list", ")"})) {
             auto node = std::make_shared<WriteStmtNode>();
             node->expressions = exprListValue(v[2]);
+            setNodeLocationFromValue(node, v[0]);
             return std::static_pointer_cast<StmtNode>(node);
         }
         return std::monostate{};
@@ -1280,6 +1349,7 @@ void Parser::registerDefaultActions() {
                 variable->indices = suffix->indices;
                 variable->fields = suffix->fields;
             }
+            setNodeLocationFromValue(variable, v[0]);
             return std::static_pointer_cast<ExprNode>(variable);
         }
         return std::monostate{};
@@ -1288,6 +1358,7 @@ void Parser::registerDefaultActions() {
     // --- id_varpart ---
     registerAction("id_varpart", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
         auto suffix = std::make_shared<VariableExprNode>();
+        setNodeLocationFromValue(suffix, v[0]);
         if (p.rhs.empty()) return std::static_pointer_cast<ExprNode>(suffix);
         if (rhsEquals(p, {"field_chain"})) {
             suffix->fields = stringListValue(v[0]);
@@ -1354,6 +1425,7 @@ void Parser::registerDefaultActions() {
             binary->op = tail.op;
             binary->left = left;
             binary->right = tail.rhs;
+            if (left) binary->setLocation(left->line, left->column);
             return std::static_pointer_cast<ExprNode>(binary);
         }
         return std::monostate{};
@@ -1417,18 +1489,21 @@ void Parser::registerDefaultActions() {
             auto lit = std::make_shared<LiteralExprNode>();
             lit->literalType = "num";
             lit->value = tokenLexeme(v[0]);
+            setNodeLocationFromValue(lit, v[0]);
             return std::static_pointer_cast<ExprNode>(lit);
         }
         if (rhsEquals(p, {"string"})) {
             auto lit = std::make_shared<LiteralExprNode>();
             lit->literalType = "string";
             lit->value = tokenLexeme(v[0]);
+            setNodeLocationFromValue(lit, v[0]);
             return std::static_pointer_cast<ExprNode>(lit);
         }
         if (rhsEquals(p, {"letter"})) {
             auto lit = std::make_shared<LiteralExprNode>();
             lit->literalType = "char";
             lit->value = tokenLexeme(v[0]);
+            setNodeLocationFromValue(lit, v[0]);
             return std::static_pointer_cast<ExprNode>(lit);
         }
         if (rhsEquals(p, {"id", "factor_id_tail"})) {
@@ -1438,6 +1513,7 @@ void Parser::registerDefaultActions() {
                 auto call = std::make_shared<CallExprNode>();
                 call->callee = name;
                 call->arguments = tail.expressions;
+                setNodeLocationFromValue(call, v[0]);
                 return std::static_pointer_cast<ExprNode>(call);
             }
             auto variable = std::make_shared<VariableExprNode>();
@@ -1446,6 +1522,7 @@ void Parser::registerDefaultActions() {
                 variable->indices = tail.expressions;
             }
             variable->fields = tail.fields;
+            setNodeLocationFromValue(variable, v[0]);
             return std::static_pointer_cast<ExprNode>(variable);
         }
         if (rhsEquals(p, {"(", "expression", ")"})) return exprValue(v[1]);
@@ -1453,12 +1530,14 @@ void Parser::registerDefaultActions() {
             auto node = std::make_shared<UnaryExprNode>();
             node->op = "not";
             node->operand = exprValue(v[1]);
+            setNodeLocationFromValue(node, v[0]);
             return std::static_pointer_cast<ExprNode>(node);
         }
         if (rhsEquals(p, {"-", "factor"})) {
             auto node = std::make_shared<UnaryExprNode>();
             node->op = "-";
             node->operand = exprValue(v[1]);
+            setNodeLocationFromValue(node, v[0]);
             return std::static_pointer_cast<ExprNode>(node);
         }
         return std::monostate{};

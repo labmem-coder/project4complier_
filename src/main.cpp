@@ -40,6 +40,15 @@ static void printTokens(const std::vector<Token>& tokens, std::ostream& os) {
     }
 }
 
+static void printErrorLine(std::ostream& os, const std::string& phase,
+                           int line, int column, const std::string& message) {
+    os << "  [" << phase << "]";
+    if (line > 0 && column > 0) {
+        os << "[Line " << line << ", Col " << column << "]";
+    }
+    os << " " << message << "\n";
+}
+
 // ---------------------------------------------------------------------------
 // Build grammar (shared by all modes that need parsing)
 // ---------------------------------------------------------------------------
@@ -71,10 +80,9 @@ static bool runPipeline(Grammar& g, const std::string& inputFile,
 
     // Report lexer errors (collected during on-demand tokenization)
     if (parser.hasLexerErrors()) {
-        std::cerr << "*** LEXER ERRORS ***\n";
+        std::cerr << "\n*** ERRORS: LEXER (" << parser.getLexerErrors().size() << ") ***\n";
         for (const auto& err : parser.getLexerErrors()) {
-            std::cerr << "  [Line " << err.line << ", Col " << err.column << "] "
-                      << err.message << "\n";
+            printErrorLine(std::cerr, "Lexer", err.line, err.column, err.message);
         }
     }
 
@@ -92,11 +100,9 @@ static bool runPipeline(Grammar& g, const std::string& inputFile,
     }
 
     if (!success) {
-        std::cerr << "\n*** PARSE FAILED with "
-                  << parser.getErrors().size() << " error(s): ***\n";
+        std::cerr << "\n*** ERRORS: PARSER (" << parser.getErrors().size() << ") ***\n";
         for (auto& err : parser.getErrors()) {
-            std::cerr << "  [Line " << err.line << ", Col " << err.column << "] "
-                      << err.message << "\n";
+            printErrorLine(std::cerr, "Parser", err.line, err.column, err.message);
         }
         return false;
     }
@@ -116,9 +122,9 @@ static bool runPipeline(Grammar& g, const std::string& inputFile,
     bool semOk = analyzer.analyze(parser.getASTRoot());
 
     if (analyzer.hasErrors()) {
-        std::cerr << "\n*** SEMANTIC ERRORS (" << analyzer.getErrors().size() << ") ***\n";
+        std::cerr << "\n*** ERRORS: SEMANTIC (" << analyzer.getErrors().size() << ") ***\n";
         for (const auto& err : analyzer.getErrors()) {
-            std::cerr << "  " << err.message << "\n";
+            printErrorLine(std::cerr, "Semantic", err.line, err.column, err.message);
         }
     }
     if (!semOk) {
@@ -186,10 +192,9 @@ int main(int argc, char* argv[]) {
         Lexer lexer(source);
         auto tokens = lexer.tokenize();
         if (lexer.hasErrors()) {
-            std::cerr << "*** LEXER ERRORS ***\n";
+            std::cerr << "\n*** ERRORS: LEXER (" << lexer.getErrors().size() << ") ***\n";
             for (const auto& err : lexer.getErrors()) {
-                std::cerr << "  [Line " << err.line << ", Col " << err.column << "] "
-                          << err.message << "\n";
+                printErrorLine(std::cerr, "Lexer", err.line, err.column, err.message);
             }
         }
         printTokens(tokens, std::cout);

@@ -28,6 +28,12 @@ struct ExprChain {
     std::vector<std::pair<std::string, ExprNodePtr>> items;
 };
 
+struct LocatedStringList {
+    std::vector<std::string> values;
+    int line = 0;
+    int column = 0;
+};
+
 struct FactorTail {
     enum class Kind { None, Index, Call };
     Kind kind = Kind::None;
@@ -54,6 +60,7 @@ using SemanticValue = std::variant<
     std::monostate,
     Token,
     std::string,
+    LocatedStringList,
     std::vector<std::string>,
     DeclNodePtr,
     StmtNodePtr,

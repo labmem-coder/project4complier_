@@ -8,7 +8,11 @@
 // Helpers
 // ---------------------------------------------------------------------------
 void SemanticAnalyzer::addError(const std::string& msg) {
-    errors_.push_back({msg});
+    errors_.push_back({0, 0, msg});
+}
+
+void SemanticAnalyzer::addError(const ASTNode& node, const std::string& msg) {
+    errors_.push_back({node.line, node.column, msg});
 }
 
 void SemanticAnalyzer::markCurrentFunctionAssigned() {
@@ -183,7 +187,7 @@ void SemanticAnalyzer::visitConstDecl(ConstDeclNode& node) {
         sym.type = TypeInfo::makeSimple("integer");
     }
     if (!symTable_.declare(sym))
-        addError("Duplicate constant declaration: '" + node.name + "'");
+        addError(node, "Duplicate constant declaration: '" + node.name + "'");
 }
 
 void SemanticAnalyzer::visitVarDecl(VarDeclNode& node) {
@@ -194,13 +198,13 @@ void SemanticAnalyzer::visitVarDecl(VarDeclNode& node) {
             std::set<std::string> seen;
             for (const auto& field : type.recordFields) {
                 if (!seen.insert(field.first).second) {
-                    addError("Duplicate field declaration '" + field.first + "' in " + owner);
+                    addError(node, "Duplicate field declaration '" + field.first + "' in " + owner);
                 }
                 validateRecordType(field.second, "record field '" + field.first + "'");
             }
         };
     if (ti.isArray() && ti.arrayLow > ti.arrayHigh) {
-        addError("Invalid array bounds in declaration: lower bound exceeds upper bound");
+        addError(node, "Invalid array bounds in declaration: lower bound exceeds upper bound");
     }
     validateRecordType(ti, "record type");
     for (auto& name : node.names) {
@@ -209,7 +213,7 @@ void SemanticAnalyzer::visitVarDecl(VarDeclNode& node) {
         sym.kind = SymbolKind::Variable;
         sym.type = ti;
         if (!symTable_.declare(sym))
-            addError("Duplicate variable declaration: '" + name + "'");
+            addError(node, "Duplicate variable declaration: '" + name + "'");
     }
 }
 
@@ -231,7 +235,7 @@ void SemanticAnalyzer::visitSubprogramDecl(SubprogramDeclNode& node) {
         }
     }
     if (!symTable_.declare(sym))
-        addError("Duplicate subprogram declaration: '" + node.name + "'");
+        addError(node, "Duplicate subprogram declaration: '" + node.name + "'");
 
     // Enter subprogram scope
     symTable_.enterScope();
@@ -252,7 +256,7 @@ void SemanticAnalyzer::visitSubprogramDecl(SubprogramDeclNode& node) {
                 paramSym.type = pType;
                 paramSym.byReference = pd->byReference;
                 if (!symTable_.declare(paramSym))
-                    addError("Duplicate parameter name: '" + pname + "'");
+                    addError(*pd, "Duplicate parameter name: '" + pname + "'");
             }
         }
     }
@@ -270,7 +274,7 @@ void SemanticAnalyzer::visitSubprogramDecl(SubprogramDeclNode& node) {
 
     if (sym.kind == SymbolKind::Function) {
         if (!functionAssignedStack_.back()) {
-            addError("Function '" + node.name + "' has no return assignment");
+            addError(node, "Function '" + node.name + "' has no return assignment");
         }
         functionAssignedStack_.pop_back();
     }
@@ -297,7 +301,7 @@ void SemanticAnalyzer::visitAssignStmt(AssignStmtNode& node) {
         if (auto* ve = dynamic_cast<VariableExprNode*>(node.target.get())) {
             Symbol* targetSym = symTable_.lookup(ve->name);
             if (targetSym && targetSym->kind == SymbolKind::Constant) {
-                addError("Cannot assign to constant '" + ve->name + "'");
+                addError(*ve, "Cannot assign to constant '" + ve->name + "'");
             }
             if (!currentFunction_.empty() && ve->name == currentFunction_ && ve->indices.empty()) {
                 markCurrentFunctionAssigned();
@@ -308,7 +312,7 @@ void SemanticAnalyzer::visitAssignStmt(AssignStmtNode& node) {
         if (!typesCompatible(lhsType, rhsType)) {
             auto* ve = dynamic_cast<VariableExprNode*>(node.target.get());
             std::string name = ve ? ve->name : "<expr>";
-            addError("Type mismatch in assignment to '" + name +
+            addError(node, "Type mismatch in assignment to '" + name +
                      "': cannot assign " + rhsType.toString() +
                      " to " + lhsType.toString());
         }
@@ -324,13 +328,13 @@ void SemanticAnalyzer::visitCallStmt(CallStmtNode& node) {
                        [](unsigned char c){ return std::tolower(c); });
         if (lower != "read" && lower != "write" &&
             lower != "readln" && lower != "writeln") {
-            addError("Undeclared procedure: '" + node.callee + "'");
+            addError(node, "Undeclared procedure: '" + node.callee + "'");
         }
     } else if (sym->kind != SymbolKind::Procedure && sym->kind != SymbolKind::Function) {
-        addError("'" + node.callee + "' is not callable");
+        addError(node, "'" + node.callee + "' is not callable");
     } else {
         if (node.arguments.size() != sym->params.size()) {
-            addError("Call to '" + node.callee + "' expects " +
+            addError(node, "Call to '" + node.callee + "' expects " +
                      std::to_string(sym->params.size()) + " argument(s), got " +
                      std::to_string(node.arguments.size()));
         } else {
@@ -339,13 +343,13 @@ void SemanticAnalyzer::visitCallStmt(CallStmtNode& node) {
                 TypeInfo actual = inferType(node.arguments[i].get());
                 const ParamInfo& expected = sym->params[i];
                 if (!typesCompatible(expected.type, actual)) {
-                    addError("Argument " + std::to_string(i + 1) + " of '" + node.callee +
+                    addError(*node.arguments[i], "Argument " + std::to_string(i + 1) + " of '" + node.callee +
                              "' expects " + expected.type.toString() +
                              ", got " + actual.toString());
                 }
                 if (expected.byReference &&
                     !dynamic_cast<VariableExprNode*>(node.arguments[i].get())) {
-                    addError("Argument " + std::to_string(i + 1) + " of '" + node.callee +
+                    addError(*node.arguments[i], "Argument " + std::to_string(i + 1) + " of '" + node.callee +
                              "' must be a variable");
                 }
             }
@@ -367,18 +371,18 @@ void SemanticAnalyzer::visitForStmt(ForStmtNode& node) {
     // Iterator must be declared and integer
     Symbol* sym = symTable_.lookup(node.iterator);
     if (!sym) {
-        addError("Undeclared for-loop iterator: '" + node.iterator + "'");
+        addError(node, "Undeclared for-loop iterator: '" + node.iterator + "'");
     } else if (!sym->type.isInteger()) {
-        addError("For-loop iterator '" + node.iterator + "' must be integer, got " +
+        addError(node, "For-loop iterator '" + node.iterator + "' must be integer, got " +
                  sym->type.toString());
     }
     if (node.startExpr) node.startExpr->accept(*this);
     if (node.endExpr)   node.endExpr->accept(*this);
     if (node.startExpr && !inferType(node.startExpr.get()).isInteger()) {
-        addError("For-loop start expression must be integer");
+        addError(*node.startExpr, "For-loop start expression must be integer");
     }
     if (node.endExpr && !inferType(node.endExpr.get()).isInteger()) {
-        addError("For-loop end expression must be integer");
+        addError(*node.endExpr, "For-loop end expression must be integer");
     }
     ++loopDepth_;
     if (node.body)      node.body->accept(*this);
@@ -389,7 +393,7 @@ void SemanticAnalyzer::visitWhileStmt(WhileStmtNode& node) {
     if (node.condition) node.condition->accept(*this);
     TypeInfo condType = inferType(node.condition.get());
     if (!condType.isBoolean()) {
-        addError("While condition must be boolean");
+        addError(*node.condition, "While condition must be boolean");
     }
     ++loopDepth_;
     if (node.body) node.body->accept(*this);
@@ -408,14 +412,14 @@ void SemanticAnalyzer::visitCaseStmt(CaseStmtNode& node) {
                 label->accept(*this);
                 if (auto key = constantValueKey(label.get())) {
                     if (!seenLabels.insert(*key).second) {
-                        addError("Duplicate case label '" +
+                        addError(*label, "Duplicate case label '" +
                                  key->substr(key->find(':') + 1) + "'");
                     }
                 }
                 TypeInfo labelType = inferType(label.get());
                 if (!typesCompatible(caseType, labelType) &&
                     !typesCompatible(labelType, caseType)) {
-                    addError("Case label type mismatch: expected " + caseType.toString() +
+                    addError(*label, "Case label type mismatch: expected " + caseType.toString() +
                              ", got " + labelType.toString());
                 }
             }
@@ -425,15 +429,15 @@ void SemanticAnalyzer::visitCaseStmt(CaseStmtNode& node) {
     --caseDepth_;
 }
 
-void SemanticAnalyzer::visitBreakStmt(BreakStmtNode& /*node*/) {
+void SemanticAnalyzer::visitBreakStmt(BreakStmtNode& node) {
     if (loopDepth_ <= 0 && caseDepth_ <= 0) {
-        addError("'break' can only appear inside for-loop or case statement");
+        addError(node, "'break' can only appear inside for-loop or case statement");
     }
 }
 
-void SemanticAnalyzer::visitContinueStmt(ContinueStmtNode& /*node*/) {
+void SemanticAnalyzer::visitContinueStmt(ContinueStmtNode& node) {
     if (loopDepth_ <= 0) {
-        addError("'continue' can only appear inside for-loop");
+        addError(node, "'continue' can only appear inside for-loop");
     }
 }
 
@@ -443,7 +447,7 @@ void SemanticAnalyzer::visitReadStmt(ReadStmtNode& node) {
             v->accept(*this);
             // read arguments should be variables
             auto* ve = dynamic_cast<VariableExprNode*>(v.get());
-            if (!ve) addError("read() argument must be a variable");
+            if (!ve) addError(*v, "read() argument must be a variable");
         }
     }
 }
@@ -459,14 +463,14 @@ void SemanticAnalyzer::visitEmptyStmt(EmptyStmtNode& /*node*/) {}
 void SemanticAnalyzer::visitVariableExpr(VariableExprNode& node) {
     Symbol* sym = symTable_.lookup(node.name);
     if (!sym) {
-        addError("Undeclared identifier: '" + node.name + "'");
+        addError(node, "Undeclared identifier: '" + node.name + "'");
         return;
     }
 
     TypeInfo current = sym->type;
     if (!node.indices.empty()) {
         if (!current.isArray()) {
-            addError("'" + node.name + "' is not an array");
+            addError(node, "'" + node.name + "' is not an array");
             return;
         }
         for (auto& idx : node.indices) {
@@ -474,13 +478,13 @@ void SemanticAnalyzer::visitVariableExpr(VariableExprNode& node) {
                 idx->accept(*this);
                 TypeInfo idxType = inferType(idx.get());
                 if (!idxType.isInteger())
-                    addError("Array index for '" + node.name + "' must be integer");
+                    addError(*idx, "Array index for '" + node.name + "' must be integer");
                 if (auto* literal = dynamic_cast<LiteralExprNode*>(idx.get());
                     literal && idxType.isInteger()) {
                     try {
                         int value = std::stoi(literal->value);
                         if (value < current.arrayLow || value > current.arrayHigh) {
-                            addError("Array index " + std::to_string(value) + " out of bounds for '" +
+                            addError(*idx, "Array index " + std::to_string(value) + " out of bounds for '" +
                                      node.name + "' [" + std::to_string(current.arrayLow) + ".." +
                                      std::to_string(current.arrayHigh) + "]");
                         }
@@ -494,12 +498,12 @@ void SemanticAnalyzer::visitVariableExpr(VariableExprNode& node) {
 
     for (const auto& field : node.fields) {
         if (!current.isRecord()) {
-            addError("Cannot access field '" + field + "' on non-record '" + node.name + "'");
+            addError(node, "Cannot access field '" + field + "' on non-record '" + node.name + "'");
             return;
         }
         const TypeInfo* fieldType = current.findField(field);
         if (!fieldType) {
-            addError("Record '" + node.name + "' has no field '" + field + "'");
+            addError(node, "Record '" + node.name + "' has no field '" + field + "'");
             return;
         }
         current = *fieldType;
@@ -512,10 +516,10 @@ void SemanticAnalyzer::visitUnaryExpr(UnaryExprNode& node) {
     if (node.operand) node.operand->accept(*this);
     TypeInfo operandType = inferType(node.operand.get());
     if (node.op == "not" && !operandType.isBoolean()) {
-        addError("Operator 'not' requires boolean operand");
+        addError(node, "Operator 'not' requires boolean operand");
     }
     if (node.op == "-" && !operandType.isNumeric()) {
-        addError("Unary '-' requires numeric operand");
+        addError(node, "Unary '-' requires numeric operand");
     }
 }
 
@@ -528,22 +532,22 @@ void SemanticAnalyzer::visitBinaryExpr(BinaryExprNode& node) {
 
     if (node.op == "+" || node.op == "-" || node.op == "*" || node.op == "/") {
         if (!lt.isNumeric() || !rt.isNumeric()) {
-            addError("Operator '" + node.op + "' requires numeric operands");
+            addError(node, "Operator '" + node.op + "' requires numeric operands");
         }
         return;
     }
 
     if (node.op == "div" || node.op == "mod") {
         if (!lt.isInteger())
-            addError("Left operand of '" + node.op + "' must be integer");
+            addError(node, "Left operand of '" + node.op + "' must be integer");
         if (!rt.isInteger())
-            addError("Right operand of '" + node.op + "' must be integer");
+            addError(node, "Right operand of '" + node.op + "' must be integer");
         return;
     }
 
     if (node.op == "and" || node.op == "or") {
         if (!lt.isBoolean() || !rt.isBoolean()) {
-            addError("Operator '" + node.op + "' requires boolean operands");
+            addError(node, "Operator '" + node.op + "' requires boolean operands");
         }
         return;
     }
@@ -551,7 +555,7 @@ void SemanticAnalyzer::visitBinaryExpr(BinaryExprNode& node) {
     if (node.op == "=" || node.op == "<>" || node.op == "<" ||
         node.op == "<=" || node.op == ">" || node.op == ">=") {
         if (!typesCompatible(lt, rt) && !typesCompatible(rt, lt)) {
-            addError("Operands of '" + node.op + "' are incompatible: " +
+            addError(node, "Operands of '" + node.op + "' are incompatible: " +
                      lt.toString() + " and " + rt.toString());
         }
     }
@@ -560,12 +564,12 @@ void SemanticAnalyzer::visitBinaryExpr(BinaryExprNode& node) {
 void SemanticAnalyzer::visitCallExpr(CallExprNode& node) {
     Symbol* sym = symTable_.lookup(node.callee);
     if (!sym) {
-        addError("Undeclared function: '" + node.callee + "'");
+        addError(node, "Undeclared function: '" + node.callee + "'");
     } else if (sym->kind != SymbolKind::Function) {
-        addError("'" + node.callee + "' is not a function");
+        addError(node, "'" + node.callee + "' is not a function");
     } else {
         if (node.arguments.size() != sym->params.size()) {
-            addError("Function '" + node.callee + "' expects " +
+            addError(node, "Function '" + node.callee + "' expects " +
                      std::to_string(sym->params.size()) + " argument(s), got " +
                      std::to_string(node.arguments.size()));
         } else {
@@ -574,13 +578,13 @@ void SemanticAnalyzer::visitCallExpr(CallExprNode& node) {
                 TypeInfo actual = inferType(node.arguments[i].get());
                 const ParamInfo& expected = sym->params[i];
                 if (!typesCompatible(expected.type, actual)) {
-                    addError("Argument " + std::to_string(i + 1) + " of '" + node.callee +
+                    addError(*node.arguments[i], "Argument " + std::to_string(i + 1) + " of '" + node.callee +
                              "' expects " + expected.type.toString() +
                              ", got " + actual.toString());
                 }
                 if (expected.byReference &&
                     !dynamic_cast<VariableExprNode*>(node.arguments[i].get())) {
-                    addError("Argument " + std::to_string(i + 1) + " of '" + node.callee +
+                    addError(*node.arguments[i], "Argument " + std::to_string(i + 1) + " of '" + node.callee +
                              "' must be a variable");
                 }
             }

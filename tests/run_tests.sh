@@ -127,6 +127,12 @@ for f in "$ROOT_DIR"/tests/error_test_lex/*.pas; do
 done
 echo ""
 
+echo -e "${YELLOW}  - semantic_error_test/ (expect: semantic failure)${NC}"
+for f in "$ROOT_DIR"/tests/semantic_error_test/*.pas; do
+    run_corpus_test "$f" "no" "semantic_error_test"
+done
+echo ""
+
 echo "=============================================="
 printf "  Total: %d  |  ${GREEN}Passed: %d${NC}  |  ${RED}Failed: %d${NC}\n" "$TOTAL" "$PASS" "$FAIL"
 echo "=============================================="

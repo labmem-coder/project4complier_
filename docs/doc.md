@@ -69,7 +69,7 @@
 - `tests/test_integration.exe`
   统一集成测试可执行文件。
 - `tests/run_tests.sh`
-  统一命令行测试脚本：先运行 `test_integration.exe`，再运行基于 `tests/correct_test`、`tests/error_test_bison`、`tests/error_test_lex` 的语料回归测试。
+  统一命令行测试脚本：先运行 `test_integration.exe`，再运行基于 `tests/correct_test`、`tests/error_test_bison`、`tests/error_test_lex`、`tests/semantic_error_test` 的语料回归测试。
 
 <a id="sec-3"></a>
 ## 3. 编译
@@ -367,8 +367,8 @@ AST 构建与 LL(1) 预测分析过程绑定，不是额外单独遍历生成。
 在 `--lex` 模式下，出现词法错误时主程序会打印：
 
 ```text
-*** LEXER ERRORS ***
-  [Line x, Col y] error message
+*** ERRORS: LEXER (N) ***
+  [Lexer][Line x, Col y] error message
 ```
 
 <a id="sec-12"></a>
@@ -474,27 +474,34 @@ AST 构建与 LL(1) 预测分析过程绑定，不是额外单独遍历生成。
 
 ### 错误信息输出特点
 
-当前语法和语义错误输出遵循以下原则：
+当前词法、语法、语义错误输出遵循以下原则：
 
 - 简洁明了，优先指出“哪里错了”和“为什么错”
+- 三层错误统一使用 `[阶段][Line x, Col y] message` 的形式
 - 语法错误带行号、列号、出错 token 和期望集合
-- 语义错误以自然语言直接描述问题
+- 语义错误以自然语言直接描述问题，并尽量附带源码位置
 - 若语义分析失败，会明确提示跳过代码生成
+
+当前统一的阶段前缀为：
+
+- `Lexer`
+- `Parser`
+- `Semantic`
 
 语法错误输出示例：
 
 ```text
-*** PARSE FAILED with N error(s): ***
-  [Line x, Col y] Syntax error at 'token': expected {...} for 'non_terminal'
+*** ERRORS: PARSER (N) ***
+  [Parser][Line x, Col y] Syntax error at 'token': expected {...} for 'non_terminal'
 ```
 
 语义错误输出示例：
 
 ```text
-*** SEMANTIC ERRORS (N) ***
-  Duplicate variable declaration: 'x'
-  Cannot assign to constant 'PI'
-  Argument 1 of 'f' expects integer, got char
+*** ERRORS: SEMANTIC (N) ***
+  [Semantic][Line x, Col y] Duplicate variable declaration: 'x'
+  [Semantic][Line x, Col y] Cannot assign to constant 'PI'
+  [Semantic][Line x, Col y] Argument 1 of 'f' expects integer, got char
 ```
 
 <a id="sec-13"></a>
@@ -528,10 +535,23 @@ AST 构建与 LL(1) 预测分析过程绑定，不是额外单独遍历生成。
 
 ### 失败时
 
-- 若有词法错误，会打印词法错误列表
-- 若有语法错误，会打印语法错误数量及位置
-- 若有语义错误，会打印语义错误列表，并跳过代码生成
+- 若有词法错误，会打印统一格式的词法错误列表
+- 若有语法错误，会打印统一格式的语法错误数量及位置
+- 若有语义错误，会打印统一格式的语义错误列表，并跳过代码生成
 - 语法分析器仍使用 panic mode 做基本错误恢复
+
+统一错误输出格式如下：
+
+```text
+*** ERRORS: LEXER (N) ***
+  [Lexer][Line x, Col y] ...
+
+*** ERRORS: PARSER (N) ***
+  [Parser][Line x, Col y] ...
+
+*** ERRORS: SEMANTIC (N) ***
+  [Semantic][Line x, Col y] ...
+```
 
 <a id="sec-15"></a>
 ## 15. 测试覆盖
@@ -560,7 +580,16 @@ AST 构建与 LL(1) 预测分析过程绑定，不是额外单独遍历生成。
 
 ### `test_integration`
 
-该部分说明已更新，当前统一测试覆盖范围请以 `## 17. 当前测试体系` 为准。
+当前 `test_integration` 是统一集成测试入口，已经覆盖三层错误与成功路径：
+
+- 词法测试
+  关键字、标识符、字符串、字符、注释、大小写不敏感、行列号，以及非法字符、非法标识符、非法数字、括号不匹配、未闭合字符 / 字符串 / 注释等错误
+- 语法测试
+  简单程序、无参调用、函数 / 子程序 AST 构建，以及缺少 `program`、缺少 `;`、缺少 `then`、缺少 `do`、缺少 `end`、缺少 `.`、类型声明不完整、表达式不完整、语句结构不完整
+- 语义测试
+  重复声明、未声明标识符、类型不匹配、常量赋值、参数个数 / 类型不匹配、`var` 参数检查、数组边界与下标检查、函数返回赋值检查、`break` / `continue` 非法位置、`while` 条件检查、`case` 标签检查、记录字段访问检查、一元 / 二元运算数类型检查
+- 其余集成能力
+  符号表作用域与遮蔽、注释跨阶段处理、关键字大小写不敏感、`while`、`for ... downto ...`、`record`、`case`、`break`、`continue`、零参数函数值引用、C 代码生成对比
 
 <a id="sec-16"></a>
 ## 16. 已验证样例
@@ -571,6 +600,7 @@ AST 构建与 LL(1) 预测分析过程绑定，不是额外单独遍历生成。
 - `tests/correct_test/`
 - `tests/error_test_lex/`
 - `tests/error_test_bison/`
+- `tests/semantic_error_test/`
 
 建议验证方式：
 
@@ -587,14 +617,18 @@ cd src
 
 当前 `test_integration` 已经是统一集成测试入口，覆盖内容包括：
 
-- 词法测试：字符串、字符、`//` 注释
-- 语法测试：简单程序、无参调用、函数 / 子程序、数组访问、表达式与控制流、`case` / `break` / `continue`
-- 语法测试：简单程序、无参调用、函数 / 子程序、数组访问、表达式与控制流、`while`、`for ... downto ...`、`record` 字段访问、`case` / `break` / `continue`
+- 词法测试：字符串、字符、注释、关键字大小写不敏感、非法字符、非法标识符、非法数字、括号不匹配、未闭合字符 / 字符串 / 注释
+- 语法测试：简单程序、无参调用、函数 / 子程序、`while`、`for ... downto ...`、`record` 字段访问、`case` / `break` / `continue`
+- 语法错误测试：缺少 `program`、缺少 `;`、缺少 `then`、缺少 `do`、缺少 `end`、缺少 `.`、类型声明不完整、表达式不完整、语句结构不完整
 - AST 测试：子程序参数与函数体构建
-- 语义测试：重复声明、未声明标识符、类型不匹配、函数参数个数检查、`break` / `continue` 上下文检查、`while` 条件类型检查、记录字段检查、`downto` 整数边界检查
+- 语义测试：重复声明、未声明标识符、类型不匹配、常量赋值、函数 / 过程参数个数与类型检查、`var` 参数检查、数组边界与下标检查、函数返回赋值检查、`break` / `continue` 上下文检查、`while` 条件类型检查、`case` 标签检查、记录字段检查、一元 / 二元运算数类型检查
 - 符号表测试：作用域、遮蔽、当前作用域查找
 - 代码生成对比测试：简单输出、函数调用、字符串输出、`string` 类型变量、`switch` 代码生成、`for ... downto ...` 循环、`record` 到 C `struct` 的映射
 - 全流水线测试：注释处理、关键字大小写不敏感、零参数函数调用、零参数函数值引用、扩展 Pascal-S 特性
+
+当前 `tests/test_integration.exe` 的测试结果为：
+
+- 词法、语法、语义、符号表、代码生成统一集成测试：`68/68 passed`
 
 ### `run_tests.sh`
 
@@ -604,6 +638,7 @@ cd src
 2. 运行 `src/pascal_compiler.exe` 对 `tests/correct_test/*.pas` 做成功语料回归测试
 3. 运行 `src/pascal_compiler.exe` 对 `tests/error_test_bison/*.pas` 做失败语料回归测试
 4. 运行 `src/pascal_compiler.exe` 对 `tests/error_test_lex/*.pas` 做失败语料回归测试
+5. 运行 `src/pascal_compiler.exe` 对 `tests/semantic_error_test/*.pas` 做语义失败语料回归测试
 
 脚本中的通过 / 失败判定以编译器进程退出码为准，而不是只看 `PARSE SUCCESSFUL` 文本。
 

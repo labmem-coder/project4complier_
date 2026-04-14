@@ -11,6 +11,8 @@
 // SemanticError — a single error found during semantic analysis
 // ---------------------------------------------------------------------------
 struct SemanticError {
+    int line = 0;
+    int column = 0;
     std::string message;
 };
 
@@ -70,6 +72,7 @@ private:
     std::vector<bool> functionAssignedStack_;
 
     void addError(const std::string& msg);
+    void addError(const ASTNode& node, const std::string& msg);
     void markCurrentFunctionAssigned();
     std::optional<std::string> constantValueKey(ExprNode* expr) const;
 

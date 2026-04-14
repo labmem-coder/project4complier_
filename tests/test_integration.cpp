@@ -8,6 +8,7 @@
 #include "token.h"
 
 #include <iostream>
+#include <fstream>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -115,6 +116,22 @@ static bool containsErrorMessage(const std::vector<SemanticError>& errors,
     return false;
 }
 
+static bool containsLexerErrorMessage(const std::vector<LexerError>& errors,
+                                      const std::string& fragment) {
+    for (const auto& err : errors) {
+        if (err.message.find(fragment) != std::string::npos) return true;
+    }
+    return false;
+}
+
+static bool containsParserErrorMessage(const std::vector<ParseError>& errors,
+                                       const std::string& fragment) {
+    for (const auto& err : errors) {
+        if (err.message.find(fragment) != std::string::npos) return true;
+    }
+    return false;
+}
+
 static std::string normalizeCode(const std::string& code) {
     std::istringstream iss(code);
     std::string line;
@@ -130,6 +147,63 @@ static std::string normalizeCode(const std::string& code) {
         normalized += trimmed;
     }
     return normalized;
+}
+
+static std::string readTextFile(const std::string& relativePath) {
+    const std::vector<std::string> candidates = {
+        relativePath,
+        "../" + relativePath,
+        "../../" + relativePath
+    };
+    for (const auto& candidate : candidates) {
+        std::ifstream in(candidate);
+        if (!in) continue;
+        std::ostringstream buffer;
+        buffer << in.rdbuf();
+        return buffer.str();
+    }
+    return {};
+}
+
+static void expectSemanticFailureFile(const std::string& name,
+                                      const std::string& relativePath,
+                                      const std::string& expectedFragment) {
+    TEST(name);
+    std::string source = readTextFile(relativePath);
+    EXPECT_TRUE(!source.empty());
+
+    auto r = runFullPipeline(source);
+    EXPECT_TRUE(r.parse.success);
+    EXPECT_TRUE(!r.semanticSuccess);
+    EXPECT_TRUE(containsErrorMessage(r.semanticErrors, expectedFragment));
+    PASS();
+}
+
+static void expectLexerFailureFile(const std::string& name,
+                                   const std::string& relativePath,
+                                   const std::string& expectedFragment) {
+    TEST(name);
+    std::string source = readTextFile(relativePath);
+    EXPECT_TRUE(!source.empty());
+
+    auto r = lexAndParse(source);
+    EXPECT_TRUE(!r.lexErrors.empty());
+    EXPECT_TRUE(containsLexerErrorMessage(r.lexErrors, expectedFragment));
+    PASS();
+}
+
+static void expectParserFailureFile(const std::string& name,
+                                    const std::string& relativePath,
+                                    const std::string& expectedFragment) {
+    TEST(name);
+    std::string source = readTextFile(relativePath);
+    EXPECT_TRUE(!source.empty());
+
+    auto r = lexAndParse(source);
+    EXPECT_TRUE(r.lexErrors.empty());
+    EXPECT_TRUE(!r.errors.empty());
+    EXPECT_TRUE(containsParserErrorMessage(r.errors, expectedFragment));
+    PASS();
 }
 
 // ---------------------------------------------------------------------------
@@ -163,6 +237,97 @@ static void testLexerRejectsTrailingDotReal() {
     EXPECT_TRUE(lexer.hasErrors());
     EXPECT_EQ(tokens.back().type, TokenType::END_OF_FILE);
     PASS();
+}
+
+static void testLexerInvalidAsciiFile() {
+    expectLexerFailureFile(
+        "Lexer file: invalid non-ASCII characters",
+        "tests/error_test_lex/invalid_ascii_1.pas",
+        "Invalid non-ASCII character encountered");
+}
+
+static void testLexerInvalidPunctuationFile() {
+    expectLexerFailureFile(
+        "Lexer file: invalid punctuation characters",
+        "tests/error_test_lex/invalid_ascii_2.pas",
+        "Invalid non-ASCII character encountered");
+}
+
+static void testLexerUnexpectedAsciiCharacterFile() {
+    expectLexerFailureFile(
+        "Lexer file: unexpected ASCII character",
+        "tests/error_test_lex/invalid_char_1.pas",
+        "Unexpected character '@'");
+}
+
+static void testLexerInvalidIdentifierFile() {
+    expectLexerFailureFile(
+        "Lexer file: identifier cannot start with digit",
+        "tests/error_test_lex/invalid_identifier_1.pas",
+        "identifiers cannot start with a digit");
+}
+
+static void testLexerInvalidIdentifierUnderscoreFile() {
+    expectLexerFailureFile(
+        "Lexer file: second invalid identifier case",
+        "tests/error_test_lex/invalid_identifier_2.pas",
+        "identifiers cannot start with a digit");
+}
+
+static void testLexerInvalidMultipleDotNumberFile() {
+    expectLexerFailureFile(
+        "Lexer file: number with multiple decimal points",
+        "tests/error_test_lex/invalid_number_3.pas",
+        "multiple decimal points");
+}
+
+static void testLexerInvalidTrailingDotNumberFileFromFile() {
+    expectLexerFailureFile(
+        "Lexer file: trailing dot real literal",
+        "tests/error_test_lex/invalid_number_4.pas",
+        "missing digits after decimal point");
+}
+
+static void testLexerInvalidTrailingDotNumberSecondFile() {
+    expectLexerFailureFile(
+        "Lexer file: second trailing dot real literal",
+        "tests/error_test_lex/invalid_number_5.pas",
+        "multiple decimal points");
+}
+
+static void testLexerUnmatchedOpeningBracketFile() {
+    expectLexerFailureFile(
+        "Lexer file: unmatched opening bracket",
+        "tests/error_test_lex/invalid_brack_1.pas",
+        "Unclosed opening bracket '('");
+}
+
+static void testLexerUnmatchedClosingBracketFile() {
+    expectLexerFailureFile(
+        "Lexer file: unmatched closing bracket",
+        "tests/error_test_lex/invalid_brack_2.pas",
+        "Unmatched closing bracket ')'");
+}
+
+static void testLexerUnterminatedCharLiteralFile() {
+    expectLexerFailureFile(
+        "Lexer file: unterminated character literal",
+        "tests/error_test_lex/invalid_char_literal_1.pas",
+        "Unterminated character literal");
+}
+
+static void testLexerUnterminatedStringLiteralFile() {
+    expectLexerFailureFile(
+        "Lexer file: unterminated string literal",
+        "tests/error_test_lex/invalid_string_1.pas",
+        "Unterminated character literal");
+}
+
+static void testLexerUnterminatedCommentFile() {
+    expectLexerFailureFile(
+        "Lexer file: unterminated comment",
+        "tests/error_test_lex/invalid_comment_1.pas",
+        "Unterminated comment");
 }
 
 // ---------------------------------------------------------------------------
@@ -330,6 +495,69 @@ static void testAstForSubprogramBodyAndParams() {
     EXPECT_TRUE(sub->body != nullptr);
     EXPECT_TRUE(sub->body->compoundStmt != nullptr);
     PASS();
+}
+
+static void testParserMissingProgramFile() {
+    expectParserFailureFile(
+        "Parser file: missing program keyword",
+        "tests/error_test_bison/error9.pas",
+        "expected {'program'}");
+}
+
+static void testParserMissingSemicolonFile() {
+    expectParserFailureFile(
+        "Parser file: missing semicolon",
+        "tests/error_test_bison/error8.pas",
+        "Expected ';'");
+}
+
+static void testParserMissingThenFile() {
+    expectParserFailureFile(
+        "Parser file: missing then",
+        "tests/error_test_bison/missing_then_syntax.pas",
+        "Expected 'then'");
+}
+
+static void testParserMissingDoFile() {
+    expectParserFailureFile(
+        "Parser file: missing do",
+        "tests/error_test_bison/missing_do_syntax.pas",
+        "Expected 'do'");
+}
+
+static void testParserMissingEndFile() {
+    expectParserFailureFile(
+        "Parser file: missing end",
+        "tests/error_test_bison/missing_end_syntax.pas",
+        "Expected 'end'");
+}
+
+static void testParserMissingDotFile() {
+    expectParserFailureFile(
+        "Parser file: missing program terminator '.'",
+        "tests/error_test_bison/missing_dot_syntax.pas",
+        "Expected '.'");
+}
+
+static void testParserIncompleteTypeDeclFile() {
+    expectParserFailureFile(
+        "Parser file: incomplete type declaration",
+        "tests/error_test_bison/incomplete_type_decl_syntax.pas",
+        "for 'type'");
+}
+
+static void testParserIncompleteExpressionFile() {
+    expectParserFailureFile(
+        "Parser file: incomplete expression",
+        "tests/error_test_bison/incomplete_expression_syntax.pas",
+        "for 'term'");
+}
+
+static void testParserIncompleteStatementFile() {
+    expectParserFailureFile(
+        "Parser file: incomplete statement structure",
+        "tests/error_test_bison/incomplete_statement_syntax.pas",
+        "Syntax error at 'else'");
 }
 
 // ---------------------------------------------------------------------------
@@ -562,6 +790,111 @@ static void testSemanticRecordFieldMustExist() {
     PASS();
 }
 
+static void testSemanticDuplicateSubprogramDeclFromFile() {
+    expectSemanticFailureFile(
+        "Semantic file: duplicate subprogram declaration",
+        "tests/semantic_error_test/duplicate_subprogram_decl.pas",
+        "Duplicate subprogram declaration");
+}
+
+static void testSemanticDuplicateParameterNameFromFile() {
+    expectSemanticFailureFile(
+        "Semantic file: duplicate parameter name",
+        "tests/semantic_error_test/duplicate_parameter_name.pas",
+        "Duplicate parameter name");
+}
+
+static void testSemanticArgumentCountMismatchFromFile() {
+    expectSemanticFailureFile(
+        "Semantic file: argument count mismatch",
+        "tests/semantic_error_test/argument_count_mismatch.pas",
+        "expects 2 argument(s), got 1");
+}
+
+static void testSemanticArrayIndexNotIntegerFromFile() {
+    expectSemanticFailureFile(
+        "Semantic file: array index not integer",
+        "tests/semantic_error_test/array_index_not_integer.pas",
+        "must be integer");
+}
+
+static void testSemanticForIteratorNotIntegerFromFile() {
+    expectSemanticFailureFile(
+        "Semantic file: for iterator not integer",
+        "tests/semantic_error_test/for_iterator_not_integer.pas",
+        "For-loop iterator 'r' must be integer");
+}
+
+static void testSemanticForStartNotIntegerFromFile() {
+    expectSemanticFailureFile(
+        "Semantic file: for start not integer",
+        "tests/semantic_error_test/for_start_not_integer.pas",
+        "For-loop start expression must be integer");
+}
+
+static void testSemanticForEndNotIntegerFromFile() {
+    expectSemanticFailureFile(
+        "Semantic file: for end not integer",
+        "tests/semantic_error_test/for_end_not_integer.pas",
+        "For-loop end expression must be integer");
+}
+
+static void testSemanticBreakOutsideLoopFromFile() {
+    expectSemanticFailureFile(
+        "Semantic file: break outside loop or case",
+        "tests/semantic_error_test/break_outside_loop_or_case.pas",
+        "'break' can only appear inside for-loop or case statement");
+}
+
+static void testSemanticContinueOutsideLoopFromFile() {
+    expectSemanticFailureFile(
+        "Semantic file: continue outside loop",
+        "tests/semantic_error_test/continue_outside_loop.pas",
+        "'continue' can only appear inside for-loop");
+}
+
+static void testSemanticCaseLabelTypeMismatchFromFile() {
+    expectSemanticFailureFile(
+        "Semantic file: case label type mismatch",
+        "tests/semantic_error_test/case_label_type_mismatch.pas",
+        "Case label type mismatch");
+}
+
+static void testSemanticFieldAccessOnNonRecordFromFile() {
+    expectSemanticFailureFile(
+        "Semantic file: field access on non-record",
+        "tests/semantic_error_test/field_access_on_non_record.pas",
+        "Cannot access field 'age' on non-record 'x'");
+}
+
+static void testSemanticNotOperandNotBooleanFromFile() {
+    expectSemanticFailureFile(
+        "Semantic file: not operand not boolean",
+        "tests/semantic_error_test/not_operand_not_boolean.pas",
+        "Operator 'not' requires boolean operand");
+}
+
+static void testSemanticUnaryMinusNotNumericFromFile() {
+    expectSemanticFailureFile(
+        "Semantic file: unary minus not numeric",
+        "tests/semantic_error_test/unary_minus_not_numeric.pas",
+        "Unary '-' requires numeric operand");
+}
+
+static void testSemanticUndeclaredProcedureFromFile() {
+    expectSemanticFailureFile(
+        "Semantic file: undeclared procedure",
+        "tests/semantic_error_test/undeclared_procedure.pas",
+        "Undeclared procedure: 'foo'");
+}
+
+static void testSemanticUndeclaredFunctionFromFile() {
+    expectSemanticFailureFile(
+        "Semantic file: undeclared function",
+        "tests/semantic_error_test/undeclared_function.pas",
+        "Undeclared function: 'foo'");
+}
+
 // ---------------------------------------------------------------------------
 // Code generation comparison tests
 // ---------------------------------------------------------------------------
@@ -723,6 +1056,19 @@ int main() {
     testLexerCommentsAndStrings();
     testLexerCharLiteral();
     testLexerRejectsTrailingDotReal();
+    testLexerInvalidAsciiFile();
+    testLexerInvalidPunctuationFile();
+    testLexerUnexpectedAsciiCharacterFile();
+    testLexerInvalidIdentifierFile();
+    testLexerInvalidIdentifierUnderscoreFile();
+    testLexerInvalidMultipleDotNumberFile();
+    testLexerInvalidTrailingDotNumberFileFromFile();
+    testLexerInvalidTrailingDotNumberSecondFile();
+    testLexerUnmatchedOpeningBracketFile();
+    testLexerUnmatchedClosingBracketFile();
+    testLexerUnterminatedCharLiteralFile();
+    testLexerUnterminatedStringLiteralFile();
+    testLexerUnterminatedCommentFile();
     testSymbolTableScopes();
 
     testSimpleProgram();
@@ -732,6 +1078,15 @@ int main() {
     testRecordDeclarationAndFieldAccess();
     testBareZeroArgumentFunctionValue();
     testAstForSubprogramBodyAndParams();
+    testParserMissingProgramFile();
+    testParserMissingSemicolonFile();
+    testParserMissingThenFile();
+    testParserMissingDoFile();
+    testParserMissingEndFile();
+    testParserMissingDotFile();
+    testParserIncompleteTypeDeclFile();
+    testParserIncompleteExpressionFile();
+    testParserIncompleteStatementFile();
 
     testSemanticPassForFunctionArguments();
     testSemanticDuplicateDeclarations();
@@ -747,6 +1102,21 @@ int main() {
     testSemanticInvalidOperatorOperands();
     testSemanticWhileConditionMustBeBoolean();
     testSemanticRecordFieldMustExist();
+    testSemanticDuplicateSubprogramDeclFromFile();
+    testSemanticDuplicateParameterNameFromFile();
+    testSemanticArgumentCountMismatchFromFile();
+    testSemanticArrayIndexNotIntegerFromFile();
+    testSemanticForIteratorNotIntegerFromFile();
+    testSemanticForStartNotIntegerFromFile();
+    testSemanticForEndNotIntegerFromFile();
+    testSemanticBreakOutsideLoopFromFile();
+    testSemanticContinueOutsideLoopFromFile();
+    testSemanticCaseLabelTypeMismatchFromFile();
+    testSemanticFieldAccessOnNonRecordFromFile();
+    testSemanticNotOperandNotBooleanFromFile();
+    testSemanticUnaryMinusNotNumericFromFile();
+    testSemanticUndeclaredProcedureFromFile();
+    testSemanticUndeclaredFunctionFromFile();
 
     testCodegenSimpleProgram();
     testCodegenFunctionCall();
