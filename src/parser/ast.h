@@ -20,6 +20,10 @@ enum class ASTNodeKind {
     CallStmt,
     IfStmt,
     ForStmt,
+    WhileStmt,
+    CaseStmt,
+    BreakStmt,
+    ContinueStmt,
     ReadStmt,
     WriteStmt,
     EmptyStmt,
@@ -44,6 +48,10 @@ inline std::string astKindToString(ASTNodeKind kind) {
         case ASTNodeKind::CallStmt: return "CallStmt";
         case ASTNodeKind::IfStmt: return "IfStmt";
         case ASTNodeKind::ForStmt: return "ForStmt";
+        case ASTNodeKind::WhileStmt: return "WhileStmt";
+        case ASTNodeKind::CaseStmt: return "CaseStmt";
+        case ASTNodeKind::BreakStmt: return "BreakStmt";
+        case ASTNodeKind::ContinueStmt: return "ContinueStmt";
         case ASTNodeKind::ReadStmt: return "ReadStmt";
         case ASTNodeKind::WriteStmt: return "WriteStmt";
         case ASTNodeKind::EmptyStmt: return "EmptyStmt";
@@ -66,10 +74,16 @@ class ASTVisitor;
 
 struct ASTNode {
     ASTNodeKind kind;
+    int line = 0;
+    int column = 0;
     explicit ASTNode(ASTNodeKind kind) : kind(kind) {}
     virtual ~ASTNode() = default;
     virtual void print(std::ostream& os, int indent = 0) const = 0;
     virtual void accept(ASTVisitor& visitor) = 0;
+    void setLocation(int lineValue, int columnValue) {
+        line = lineValue;
+        column = columnValue;
+    }
 };
 
 using ASTNodePtr = std::shared_ptr<ASTNode>;
@@ -259,6 +273,60 @@ struct CompoundStmtNode : StmtNode {
     }
 };
 
+struct CaseBranchNode {
+    ExprNodeList labels;
+    StmtNodePtr statement;
+
+    void print(std::ostream& os, int indent = 0) const {
+        os << indentString(indent) << "CaseBranch\n";
+        os << indentString(indent + 2) << "Labels[" << labels.size() << "]\n";
+        for (const auto& label : labels) {
+            if (label) label->print(os, indent + 4);
+            else os << indentString(indent + 4) << "null\n";
+        }
+        os << indentString(indent + 2) << "Statement\n";
+        if (statement) statement->print(os, indent + 4);
+        else os << indentString(indent + 4) << "null\n";
+    }
+};
+
+struct CaseStmtNode : StmtNode {
+    ExprNodePtr expression;
+    std::vector<CaseBranchNode> branches;
+
+    CaseStmtNode() : StmtNode(ASTNodeKind::CaseStmt) {}
+    void accept(ASTVisitor& visitor) override;
+
+    void print(std::ostream& os, int indent = 0) const override {
+        os << indentString(indent) << "CaseStmt\n";
+        os << indentString(indent + 2) << "Expression\n";
+        if (expression) expression->print(os, indent + 4);
+        else os << indentString(indent + 4) << "null\n";
+        os << indentString(indent + 2) << "Branches[" << branches.size() << "]\n";
+        for (const auto& branch : branches) {
+            branch.print(os, indent + 4);
+        }
+    }
+};
+
+struct BreakStmtNode : StmtNode {
+    BreakStmtNode() : StmtNode(ASTNodeKind::BreakStmt) {}
+    void accept(ASTVisitor& visitor) override;
+
+    void print(std::ostream& os, int indent = 0) const override {
+        os << indentString(indent) << "BreakStmt\n";
+    }
+};
+
+struct ContinueStmtNode : StmtNode {
+    ContinueStmtNode() : StmtNode(ASTNodeKind::ContinueStmt) {}
+    void accept(ASTVisitor& visitor) override;
+
+    void print(std::ostream& os, int indent = 0) const override {
+        os << indentString(indent) << "ContinueStmt\n";
+    }
+};
+
 struct EmptyStmtNode : StmtNode {
     EmptyStmtNode() : StmtNode(ASTNodeKind::EmptyStmt) {}
     void accept(ASTVisitor& visitor) override;
@@ -326,6 +394,7 @@ struct IfStmtNode : StmtNode {
 
 struct ForStmtNode : StmtNode {
     std::string iterator;
+    bool descending = false;
     ExprNodePtr startExpr;
     ExprNodePtr endExpr;
     StmtNodePtr body;
@@ -334,12 +403,31 @@ struct ForStmtNode : StmtNode {
     void accept(ASTVisitor& visitor) override;
 
     void print(std::ostream& os, int indent = 0) const override {
-        os << indentString(indent) << "ForStmt(iterator=" << iterator << ")\n";
+        os << indentString(indent) << "ForStmt(iterator=" << iterator
+           << ", direction=" << (descending ? "downto" : "to") << ")\n";
         os << indentString(indent + 2) << "Start\n";
         if (startExpr) startExpr->print(os, indent + 4);
         else os << indentString(indent + 4) << "null\n";
         os << indentString(indent + 2) << "End\n";
         if (endExpr) endExpr->print(os, indent + 4);
+        else os << indentString(indent + 4) << "null\n";
+        os << indentString(indent + 2) << "Body\n";
+        if (body) body->print(os, indent + 4);
+        else os << indentString(indent + 4) << "null\n";
+    }
+};
+
+struct WhileStmtNode : StmtNode {
+    ExprNodePtr condition;
+    StmtNodePtr body;
+
+    WhileStmtNode() : StmtNode(ASTNodeKind::WhileStmt) {}
+    void accept(ASTVisitor& visitor) override;
+
+    void print(std::ostream& os, int indent = 0) const override {
+        os << indentString(indent) << "WhileStmt\n";
+        os << indentString(indent + 2) << "Condition\n";
+        if (condition) condition->print(os, indent + 4);
         else os << indentString(indent + 4) << "null\n";
         os << indentString(indent + 2) << "Body\n";
         if (body) body->print(os, indent + 4);
@@ -380,6 +468,7 @@ struct WriteStmtNode : StmtNode {
 struct VariableExprNode : ExprNode {
     std::string name;
     std::vector<ExprNodePtr> indices;
+    std::vector<std::string> fields;
 
     VariableExprNode() : ExprNode(ASTNodeKind::VariableExpr) {}
     void accept(ASTVisitor& visitor) override;
@@ -390,6 +479,9 @@ struct VariableExprNode : ExprNode {
             os << indentString(indent + 2) << "Index\n";
             if (index) index->print(os, indent + 4);
             else os << indentString(indent + 4) << "null\n";
+        }
+        for (const auto& field : fields) {
+            os << indentString(indent + 2) << "Field(" << field << ")\n";
         }
     }
 };
@@ -482,6 +574,10 @@ public:
     virtual void visitCallStmt(CallStmtNode& /*node*/) {}
     virtual void visitIfStmt(IfStmtNode& /*node*/) {}
     virtual void visitForStmt(ForStmtNode& /*node*/) {}
+    virtual void visitWhileStmt(WhileStmtNode& /*node*/) {}
+    virtual void visitCaseStmt(CaseStmtNode& /*node*/) {}
+    virtual void visitBreakStmt(BreakStmtNode& /*node*/) {}
+    virtual void visitContinueStmt(ContinueStmtNode& /*node*/) {}
     virtual void visitReadStmt(ReadStmtNode& /*node*/) {}
     virtual void visitWriteStmt(WriteStmtNode& /*node*/) {}
     virtual void visitEmptyStmt(EmptyStmtNode& /*node*/) {}
@@ -507,6 +603,10 @@ inline void AssignStmtNode::accept(ASTVisitor& v)     { v.visitAssignStmt(*this)
 inline void CallStmtNode::accept(ASTVisitor& v)       { v.visitCallStmt(*this); }
 inline void IfStmtNode::accept(ASTVisitor& v)         { v.visitIfStmt(*this); }
 inline void ForStmtNode::accept(ASTVisitor& v)        { v.visitForStmt(*this); }
+inline void WhileStmtNode::accept(ASTVisitor& v)      { v.visitWhileStmt(*this); }
+inline void CaseStmtNode::accept(ASTVisitor& v)       { v.visitCaseStmt(*this); }
+inline void BreakStmtNode::accept(ASTVisitor& v)      { v.visitBreakStmt(*this); }
+inline void ContinueStmtNode::accept(ASTVisitor& v)   { v.visitContinueStmt(*this); }
 inline void ReadStmtNode::accept(ASTVisitor& v)       { v.visitReadStmt(*this); }
 inline void WriteStmtNode::accept(ASTVisitor& v)      { v.visitWriteStmt(*this); }
 inline void VariableExprNode::accept(ASTVisitor& v)   { v.visitVariableExpr(*this); }
