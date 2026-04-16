@@ -14,6 +14,7 @@ enum class TokenType {
     READ, WRITE, WHILE, REPEAT, UNTIL,
     INTEGER_KW, REAL_KW, BOOLEAN_KW, CHAR_KW, STRING_KW,
     ARRAY, OF, NOT, CASE, BREAK, CONTINUE, RECORD,
+    TRUE_KW, FALSE_KW,
 
     // Operators
     ASSIGN,     // :=
@@ -82,6 +83,7 @@ inline std::unordered_map<std::string, TokenType> buildTokenNameMap() {
         {"NOT", TokenType::NOT}, {"CASE", TokenType::CASE},
         {"BREAK", TokenType::BREAK}, {"CONTINUE", TokenType::CONTINUE},
         {"RECORD", TokenType::RECORD},
+        {"TRUE", TokenType::TRUE_KW}, {"FALSE", TokenType::FALSE_KW},
         {"ASSIGN", TokenType::ASSIGN}, {"PLUS", TokenType::PLUS},
         {"MINUS", TokenType::MINUS}, {"MULTIPLY", TokenType::MULTIPLY},
         {"DIVIDE", TokenType::DIVIDE}, {"DIV", TokenType::DIV_KW},
@@ -122,6 +124,7 @@ inline std::string tokenTypeToTerminal(TokenType t) {
         {TokenType::NOT, "not"}, {TokenType::CASE, "case"},
         {TokenType::BREAK, "break"}, {TokenType::CONTINUE, "continue"},
         {TokenType::RECORD, "record"},
+        {TokenType::TRUE_KW, "true"}, {TokenType::FALSE_KW, "false"},
         {TokenType::ASSIGN, "assignop"}, {TokenType::PLUS, "+"},
         {TokenType::MINUS, "-"}, {TokenType::MULTIPLY, "*"},
         {TokenType::DIVIDE, "/"}, {TokenType::DIV_KW, "div"},
@@ -169,6 +172,7 @@ inline std::string tokenTypeToString(TokenType t) {
         {TokenType::NOT, "NOT"}, {TokenType::CASE, "CASE"},
         {TokenType::BREAK, "BREAK"}, {TokenType::CONTINUE, "CONTINUE"},
         {TokenType::RECORD, "RECORD"},
+        {TokenType::TRUE_KW, "TRUE"}, {TokenType::FALSE_KW, "FALSE"},
         {TokenType::ASSIGN, "ASSIGN"}, {TokenType::PLUS, "PLUS"},
         {TokenType::MINUS, "MINUS"}, {TokenType::MULTIPLY, "MULTIPLY"},
         {TokenType::DIVIDE, "DIVIDE"}, {TokenType::DIV_KW, "DIV"},

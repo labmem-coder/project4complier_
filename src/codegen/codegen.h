@@ -68,6 +68,7 @@ private:
 
     // Emit a variable/array access expression (handles array offset)
     void emitVarAccess(VariableExprNode& node);
+    void emitAssignableVarAccess(VariableExprNode& node);
 
     // Emit an expression into the output stream
     void emitExpr(ExprNode* expr);

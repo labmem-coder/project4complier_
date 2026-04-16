@@ -51,12 +51,13 @@ TypeInfo SemanticAnalyzer::inferType(ExprNode* expr) {
                 return TypeInfo::makeSimple(sym->returnType);
             }
             TypeInfo current = sym->type;
-            if (current.isArray()) {
-                if (!ve->indices.empty()) {
+            if (!ve->indices.empty()) {
+                for (size_t i = 0; i < ve->indices.size(); ++i) {
+                    if (!current.isArray()) return TypeInfo::makeSimple("void");
                     current = TypeInfo::fromString(current.elementType);
-                } else {
-                    return current;
                 }
+            } else if (current.isArray()) {
+                return current;
             }
             for (const auto& field : ve->fields) {
                 if (!current.isRecord()) return TypeInfo::makeSimple("void");
@@ -80,13 +81,19 @@ TypeInfo SemanticAnalyzer::inferType(ExprNode* expr) {
                 return TypeInfo::makeSimple("char");
             if (le->literalType == "string")
                 return TypeInfo::makeSimple("string");
+            if (le->literalType == "boolean")
+                return TypeInfo::makeSimple("boolean");
             return TypeInfo::makeSimple("integer");
         }
 
         case ASTNodeKind::UnaryExpr: {
             auto* ue = static_cast<UnaryExprNode*>(expr);
-            if (ue->op == "not") return TypeInfo::makeSimple("boolean");
-            return inferType(ue->operand.get());
+            TypeInfo operandType = inferType(ue->operand.get());
+            if (ue->op == "not") {
+                if (operandType.isBoolean()) return TypeInfo::makeSimple("boolean");
+                if (operandType.isInteger()) return TypeInfo::makeSimple("integer");
+            }
+            return operandType;
         }
 
         case ASTNodeKind::BinaryExpr: {
@@ -118,7 +125,7 @@ TypeInfo SemanticAnalyzer::inferType(ExprNode* expr) {
 
         case ASTNodeKind::CallExpr: {
             auto* ce = static_cast<CallExprNode*>(expr);
-            Symbol* sym = symTable_.lookup(ce->callee);
+            Symbol* sym = symTable_.lookupFunction(ce->callee);
             if (sym && sym->kind == SymbolKind::Function)
                 return TypeInfo::makeSimple(sym->returnType);
             return TypeInfo::makeSimple("integer");
@@ -147,12 +154,6 @@ bool SemanticAnalyzer::analyze(ProgramNodePtr ast) {
 // ---------------------------------------------------------------------------
 void SemanticAnalyzer::visitProgram(ProgramNode& node) {
     symTable_.enterScope();
-
-    // Declare program name
-    Symbol progSym;
-    progSym.name = node.name;
-    progSym.kind = SymbolKind::Program;
-    symTable_.declare(progSym);
 
     // Declare program parameters (input, output, etc.) as variables
     for (auto& param : node.parameters) {
@@ -320,7 +321,7 @@ void SemanticAnalyzer::visitAssignStmt(AssignStmtNode& node) {
 }
 
 void SemanticAnalyzer::visitCallStmt(CallStmtNode& node) {
-    Symbol* sym = symTable_.lookup(node.callee);
+    Symbol* sym = symTable_.lookupCallable(node.callee);
     if (!sym) {
         // Built-in procedures: read, write, readln, writeln
         std::string lower = node.callee;
@@ -469,11 +470,11 @@ void SemanticAnalyzer::visitVariableExpr(VariableExprNode& node) {
 
     TypeInfo current = sym->type;
     if (!node.indices.empty()) {
-        if (!current.isArray()) {
-            addError(node, "'" + node.name + "' is not an array");
-            return;
-        }
         for (auto& idx : node.indices) {
+            if (!current.isArray()) {
+                addError(node, "'" + node.name + "' is not an array");
+                return;
+            }
             if (idx) {
                 idx->accept(*this);
                 TypeInfo idxType = inferType(idx.get());
@@ -492,8 +493,8 @@ void SemanticAnalyzer::visitVariableExpr(VariableExprNode& node) {
                     }
                 }
             }
+            current = TypeInfo::fromString(current.elementType);
         }
-        current = TypeInfo::fromString(current.elementType);
     }
 
     for (const auto& field : node.fields) {
@@ -515,11 +516,11 @@ void SemanticAnalyzer::visitLiteralExpr(LiteralExprNode& /*node*/) {}
 void SemanticAnalyzer::visitUnaryExpr(UnaryExprNode& node) {
     if (node.operand) node.operand->accept(*this);
     TypeInfo operandType = inferType(node.operand.get());
-    if (node.op == "not" && !operandType.isBoolean()) {
-        addError(node, "Operator 'not' requires boolean operand");
+    if (node.op == "not" && !operandType.isBoolean() && !operandType.isInteger()) {
+        addError(node, "Operator 'not' requires boolean or integer operand");
     }
-    if (node.op == "-" && !operandType.isNumeric()) {
-        addError(node, "Unary '-' requires numeric operand");
+    if ((node.op == "-" || node.op == "+") && !operandType.isNumeric()) {
+        addError(node, "Unary '" + node.op + "' requires numeric operand");
     }
 }
 
@@ -562,7 +563,7 @@ void SemanticAnalyzer::visitBinaryExpr(BinaryExprNode& node) {
 }
 
 void SemanticAnalyzer::visitCallExpr(CallExprNode& node) {
-    Symbol* sym = symTable_.lookup(node.callee);
+    Symbol* sym = symTable_.lookupFunction(node.callee);
     if (!sym) {
         addError(node, "Undeclared function: '" + node.callee + "'");
     } else if (sym->kind != SymbolKind::Function) {

@@ -92,18 +92,22 @@ TypeInfo TypeInfo::fromString(const std::string& typeStr) {
             std::string range    = typeStr.substr(bracketStart + 1, bracketEnd - bracketStart - 1);
             std::string elemType = typeStr.substr(ofPos + 4);
 
-            // Parse first dimension  "low..high"
+            // Parse dimensions recursively so array[a..b, c..d] of T becomes
+            // array[a..b] of array[c..d] of T.
             auto dotdot = range.find("..");
             if (dotdot != std::string::npos) {
-                // Handle possible multi-dimension (take first dimension only)
                 auto comma = range.find(',', dotdot);
                 int low  = std::stoi(range.substr(0, dotdot));
-                int high;
-                if (comma != std::string::npos)
+                int high = 0;
+                std::string nestedElementType = trim(elemType);
+                if (comma != std::string::npos) {
                     high = std::stoi(range.substr(dotdot + 2, comma - dotdot - 2));
-                else
+                    std::string remainingRange = trim(range.substr(comma + 1));
+                    nestedElementType = "array[" + remainingRange + "] of " + nestedElementType;
+                } else {
                     high = std::stoi(range.substr(dotdot + 2));
-                return makeArray(low, high, elemType);
+                }
+                return makeArray(low, high, nestedElementType);
             }
         }
     }
@@ -157,5 +161,26 @@ Symbol* SymbolTable::lookupCurrent(const std::string& name) {
     if (scopes_.empty()) return nullptr;
     auto it = scopes_.back().find(name);
     if (it != scopes_.back().end()) return &it->second;
+    return nullptr;
+}
+
+Symbol* SymbolTable::lookupCallable(const std::string& name) {
+    for (int i = static_cast<int>(scopes_.size()) - 1; i >= 0; --i) {
+        auto it = scopes_[i].find(name);
+        if (it != scopes_[i].end() &&
+            (it->second.kind == SymbolKind::Function || it->second.kind == SymbolKind::Procedure)) {
+            return &it->second;
+        }
+    }
+    return nullptr;
+}
+
+Symbol* SymbolTable::lookupFunction(const std::string& name) {
+    for (int i = static_cast<int>(scopes_.size()) - 1; i >= 0; --i) {
+        auto it = scopes_[i].find(name);
+        if (it != scopes_[i].end() && it->second.kind == SymbolKind::Function) {
+            return &it->second;
+        }
+    }
     return nullptr;
 }

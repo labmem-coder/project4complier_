@@ -200,6 +200,11 @@ ExprNodePtr literalExprFromToken(const Token& token, const std::string& prefix =
         lit->value = token.lexeme;
         return std::static_pointer_cast<ExprNode>(lit);
     }
+    if (token.type == TokenType::TRUE_KW || token.type == TokenType::FALSE_KW) {
+        lit->literalType = "boolean";
+        lit->value = token.lexeme;
+        return std::static_pointer_cast<ExprNode>(lit);
+    }
     return nullptr;
 }
 
@@ -328,7 +333,7 @@ bool Parser::parse() {
     stk.push("$");
     stk.push(grammar.startSymbol);
 
-    int maxSteps = 100000;
+    int maxSteps = 1000000;
     int stepCount = 0;
 
     while (!stk.empty() && stepCount < maxSteps) {
@@ -338,33 +343,41 @@ bool Parser::parse() {
         const Token tok = currentToken();
 
         ParseStep step;
-        step.stack = stackToString(stk);
-        step.input = remainingInput();
+        if (traceEnabled_) {
+            step.stack = stackToString(stk);
+            step.input = remainingInput();
+        }
 
         if (isActionSymbol(top)) {
             const int productionIndex = actionProductionIndex(top);
             executeSemanticAction(productionIndex);
-            step.action = "REDUCE " + grammar.productions[productionIndex].lhs + " -> " +
-                          (grammar.productions[productionIndex].rhs.empty()
-                               ? "epsilon"
-                               : joinRhs(grammar.productions[productionIndex].rhs));
-            steps.push_back(step);
+            if (traceEnabled_) {
+                step.action = "REDUCE " + grammar.productions[productionIndex].lhs + " -> " +
+                              (grammar.productions[productionIndex].rhs.empty()
+                                   ? "epsilon"
+                                   : joinRhs(grammar.productions[productionIndex].rhs));
+                steps.push_back(step);
+            }
             stk.pop();
             continue;
         }
 
         if (top == "$") {
             if (input == "$") {
-                step.action = "ACCEPT";
-                steps.push_back(step);
+                if (traceEnabled_) {
+                    step.action = "ACCEPT";
+                    steps.push_back(step);
+                }
                 if (!semanticStack.empty()) {
                     astRoot = programValue(semanticStack.back());
                 }
                 return errors.empty();
             }
 
-            step.action = "ERROR: unexpected tokens after program end";
-            steps.push_back(step);
+            if (traceEnabled_) {
+                step.action = "ERROR: unexpected tokens after program end";
+                steps.push_back(step);
+            }
             addError("Unexpected tokens after program end near '" + tok.lexeme + "'");
             return false;
         }
@@ -398,14 +411,18 @@ bool Parser::parse() {
             }
 
             if (match) {
-                step.action = "MATCH '" + top + "'";
-                steps.push_back(step);
+                if (traceEnabled_) {
+                    step.action = "MATCH '" + top + "'";
+                    steps.push_back(step);
+                }
                 stk.pop();
                 semanticStack.push_back(tok);
                 advance();
             } else {
-                step.action = "ERROR: expected '" + top + "', got '" + tok.lexeme + "'";
-                steps.push_back(step);
+                if (traceEnabled_) {
+                    step.action = "ERROR: expected '" + top + "', got '" + tok.lexeme + "'";
+                    steps.push_back(step);
+                }
                 addError("Expected '" + top + "', got '" + tok.lexeme + "'");
                 stk.pop();
             }
@@ -414,8 +431,10 @@ bool Parser::parse() {
 
         auto rowIt = grammar.parseTable.find(top);
         if (rowIt == grammar.parseTable.end()) {
-            step.action = "ERROR: no parse table row for '" + top + "'";
-            steps.push_back(step);
+            if (traceEnabled_) {
+                step.action = "ERROR: no parse table row for '" + top + "'";
+                steps.push_back(step);
+            }
             addError("Internal error: no parse table row for non-terminal '" + top + "'");
             stk.pop();
             continue;
@@ -440,8 +459,10 @@ bool Parser::parse() {
 
         auto cellIt = rowIt->second.find(lookupTerminal);
         if (cellIt == rowIt->second.end()) {
-            step.action = "ERROR: no entry for [" + top + ", " + lookupTerminal + "]";
-            steps.push_back(step);
+            if (traceEnabled_) {
+                step.action = "ERROR: no entry for [" + top + ", " + lookupTerminal + "]";
+                steps.push_back(step);
+            }
 
             std::string expected;
             for (auto eit = rowIt->second.begin(); eit != rowIt->second.end(); ++eit) {
@@ -463,6 +484,7 @@ bool Parser::parse() {
                 while (currentTok.type != TokenType::END_OF_FILE) {
                     std::string nextT = currentTerminal();
                     if (top == "factor" && currentTok.type == TokenType::MINUS) nextT = "-";
+                    if (top == "factor" && currentTok.type == TokenType::PLUS) nextT = "+";
                     if (firstSet.count(nextT) || followSet.count(nextT)) {
                         recovered = true;
                         break;
@@ -481,9 +503,11 @@ bool Parser::parse() {
         const int prodIdx = cellIt->second;
         const auto& prod = grammar.productions[prodIdx];
 
-        step.action = "PREDICT " + prod.lhs + " -> ";
-        step.action += prod.rhs.empty() ? "epsilon" : joinRhs(prod.rhs);
-        steps.push_back(step);
+        if (traceEnabled_) {
+            step.action = "PREDICT " + prod.lhs + " -> ";
+            step.action += prod.rhs.empty() ? "epsilon" : joinRhs(prod.rhs);
+            steps.push_back(step);
+        }
 
         stk.pop();
         stk.push(makeActionSymbol(prodIdx));
@@ -701,6 +725,20 @@ void Parser::registerDefaultActions() {
             auto lit = std::make_shared<LiteralExprNode>();
             lit->literalType = "char";
             lit->value = tokenLexeme(v[0]);
+            return std::static_pointer_cast<ExprNode>(lit);
+        }
+        if (rhsEquals(p, {"string"})) {
+            auto lit = std::make_shared<LiteralExprNode>();
+            lit->literalType = "string";
+            lit->value = tokenLexeme(v[0]);
+            setNodeLocationFromValue(lit, v[0]);
+            return std::static_pointer_cast<ExprNode>(lit);
+        }
+        if (rhsEquals(p, {"true"}) || rhsEquals(p, {"false"})) {
+            auto lit = std::make_shared<LiteralExprNode>();
+            lit->literalType = "boolean";
+            lit->value = tokenLexeme(v[0]);
+            setNodeLocationFromValue(lit, v[0]);
             return std::static_pointer_cast<ExprNode>(lit);
         }
         return std::monostate{};
@@ -927,6 +965,7 @@ void Parser::registerDefaultActions() {
 
     // --- parameter_list → parameter parameter_list' ---
     registerAction("parameter_list", [](const Production& p, const std::vector<SemanticValue>& v) -> SemanticValue {
+        if (p.rhs.empty()) return DeclNodeList{};
         if (rhsEquals(p, {"parameter", "parameter_list'"})) {
             DeclNodeList params;
             auto first = declValue(v[0]);
@@ -1506,6 +1545,13 @@ void Parser::registerDefaultActions() {
             setNodeLocationFromValue(lit, v[0]);
             return std::static_pointer_cast<ExprNode>(lit);
         }
+        if (rhsEquals(p, {"true"}) || rhsEquals(p, {"false"})) {
+            auto lit = std::make_shared<LiteralExprNode>();
+            lit->literalType = "boolean";
+            lit->value = tokenLexeme(v[0]);
+            setNodeLocationFromValue(lit, v[0]);
+            return std::static_pointer_cast<ExprNode>(lit);
+        }
         if (rhsEquals(p, {"id", "factor_id_tail"})) {
             const std::string name = tokenLexeme(v[0]);
             const FactorTail tail = factorTailValue(v[1]);
@@ -1529,6 +1575,13 @@ void Parser::registerDefaultActions() {
         if (rhsEquals(p, {"not", "factor"})) {
             auto node = std::make_shared<UnaryExprNode>();
             node->op = "not";
+            node->operand = exprValue(v[1]);
+            setNodeLocationFromValue(node, v[0]);
+            return std::static_pointer_cast<ExprNode>(node);
+        }
+        if (rhsEquals(p, {"+", "factor"})) {
+            auto node = std::make_shared<UnaryExprNode>();
+            node->op = "+";
             node->operand = exprValue(v[1]);
             setNodeLocationFromValue(node, v[0]);
             return std::static_pointer_cast<ExprNode>(node);

@@ -72,6 +72,8 @@ public:
     bool declare(const Symbol& sym);
     Symbol* lookup(const std::string& name);
     Symbol* lookupCurrent(const std::string& name);
+    Symbol* lookupCallable(const std::string& name);
+    Symbol* lookupFunction(const std::string& name);
     int getCurrentLevel() const { return static_cast<int>(scopes_.size()) - 1; }
 
 private:

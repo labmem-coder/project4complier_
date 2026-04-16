@@ -6,7 +6,7 @@ namespace {
 
 std::string simplePascalTypeToCType(const std::string& pascalType) {
     if (pascalType == "integer") return "int";
-    if (pascalType == "real")    return "double";
+    if (pascalType == "real")    return "float";
     if (pascalType == "boolean") return "int";
     if (pascalType == "char")    return "char";
     if (pascalType == "string")  return "const char*";
@@ -27,6 +27,16 @@ std::string cDeclarationFromTypeInfo(const TypeInfo& ti, const std::string& name
         return decl;
     }
     return simplePascalTypeToCType(ti.baseType) + " " + name;
+}
+
+void collectBinaryChain(ExprNode* expr, const std::string& op, std::vector<ExprNode*>& leaves) {
+    auto* binary = dynamic_cast<BinaryExprNode*>(expr);
+    if (!binary || binary->op != op) {
+        leaves.push_back(expr);
+        return;
+    }
+    collectBinaryChain(binary->left.get(), op, leaves);
+    collectBinaryChain(binary->right.get(), op, leaves);
 }
 
 } // namespace
@@ -57,7 +67,7 @@ std::string CCodeGenerator::formatSpecifier(const TypeInfo& ti, bool forScanf) c
         return formatSpecifier(TypeInfo::makeSimple(ti.elementType), forScanf);
     }
     if (ti.baseType == "integer" || ti.baseType == "boolean") return "%d";
-    if (ti.baseType == "real")    return forScanf ? "%lf" : "%f";
+    if (ti.baseType == "real")    return "%f";
     if (ti.baseType == "char")    return "%c";
     if (ti.baseType == "string")  return "%s";
     return "%d";
@@ -78,7 +88,8 @@ TypeInfo CCodeGenerator::inferType(ExprNode* expr) {
                 return TypeInfo::makeSimple(sym->returnType);
             }
             TypeInfo current = sym->type;
-            if (current.isArray() && !ve->indices.empty()) {
+            for (size_t i = 0; i < ve->indices.size(); ++i) {
+                if (!current.isArray()) return TypeInfo::makeSimple("integer");
                 current = TypeInfo::fromString(current.elementType);
             }
             for (const auto& field : ve->fields) {
@@ -101,12 +112,18 @@ TypeInfo CCodeGenerator::inferType(ExprNode* expr) {
                 return TypeInfo::makeSimple("char");
             if (le->literalType == "string")
                 return TypeInfo::makeSimple("string");
+            if (le->literalType == "boolean")
+                return TypeInfo::makeSimple("boolean");
             return TypeInfo::makeSimple("integer");
         }
         case ASTNodeKind::UnaryExpr: {
             auto* ue = static_cast<UnaryExprNode*>(expr);
-            if (ue->op == "not") return TypeInfo::makeSimple("boolean");
-            return inferType(ue->operand.get());
+            TypeInfo operandType = inferType(ue->operand.get());
+            if (ue->op == "not") {
+                if (operandType.isBoolean()) return TypeInfo::makeSimple("boolean");
+                if (operandType.isInteger()) return TypeInfo::makeSimple("integer");
+            }
+            return operandType;
         }
         case ASTNodeKind::BinaryExpr: {
             auto* be = static_cast<BinaryExprNode*>(expr);
@@ -126,7 +143,7 @@ TypeInfo CCodeGenerator::inferType(ExprNode* expr) {
         }
         case ASTNodeKind::CallExpr: {
             auto* ce = static_cast<CallExprNode*>(expr);
-            Symbol* sym = symTable_.lookup(ce->callee);
+            Symbol* sym = symTable_.lookupFunction(ce->callee);
             if (sym && sym->kind == SymbolKind::Function)
                 return TypeInfo::makeSimple(sym->returnType);
             return TypeInfo::makeSimple("integer");
@@ -143,19 +160,32 @@ void CCodeGenerator::emitVarAccess(VariableExprNode& node) {
     emit(node.name);
     if (!node.indices.empty()) {
         Symbol* sym = symTable_.lookup(node.name);
+        TypeInfo current = sym ? sym->type : TypeInfo::makeSimple("integer");
         for (auto& idx : node.indices) {
             emit("[");
             emitExpr(idx.get());
             // Subtract array lower bound for offset
-            if (sym && sym->type.isArray() && sym->type.arrayLow != 0) {
-                emit(" - " + std::to_string(sym->type.arrayLow));
+            if (current.isArray() && current.arrayLow != 0) {
+                emit(" - " + std::to_string(current.arrayLow));
             }
             emit("]");
+            if (current.isArray()) {
+                current = TypeInfo::fromString(current.elementType);
+            }
         }
     }
     for (const auto& field : node.fields) {
         emit("." + field);
     }
+}
+
+void CCodeGenerator::emitAssignableVarAccess(VariableExprNode& node) {
+    Symbol* sym = symTable_.lookup(node.name);
+    if (sym && sym->kind == SymbolKind::Parameter && sym->byReference && node.indices.empty()) {
+        emit("(*" + node.name + ")");
+        return;
+    }
+    emitVarAccess(node);
 }
 
 void CCodeGenerator::emitExpr(ExprNode* expr) {
@@ -256,7 +286,11 @@ void CCodeGenerator::visitConstDecl(ConstDeclNode& node) {
     symTable_.declare(sym);
 
     emitIndent();
-    emit("const " + cType + " " + node.name + " = ");
+    if (cType.rfind("const ", 0) == 0) {
+        emit(cType + " " + node.name + " = ");
+    } else {
+        emit("const " + cType + " " + node.name + " = ");
+    }
     if (node.value) emitExpr(node.value.get());
     else emit("0");
     emit(";\n");
@@ -414,7 +448,7 @@ void CCodeGenerator::visitAssignStmt(AssignStmtNode& node) {
             emit(";\n");
             return;
         }
-        emitVarAccess(*target);
+        emitAssignableVarAccess(*target);
     } else if (node.target) {
         emitExpr(node.target.get());
     }
@@ -435,7 +469,6 @@ void CCodeGenerator::visitCallStmt(CallStmtNode& node) {
         emit("printf(\"");
         // Build format string
         for (size_t i = 0; i < node.arguments.size(); ++i) {
-            if (i > 0) emit(" ");
             TypeInfo ti = node.arguments[i] ? inferType(node.arguments[i].get())
                                             : TypeInfo::makeSimple("integer");
             emit(formatSpecifier(ti));
@@ -471,7 +504,7 @@ void CCodeGenerator::visitCallStmt(CallStmtNode& node) {
     // Regular procedure call
     emitIndent();
     emit(node.callee + "(");
-    Symbol* sym = symTable_.lookup(node.callee);
+    Symbol* sym = symTable_.lookupCallable(node.callee);
     for (size_t i = 0; i < node.arguments.size(); ++i) {
         if (i > 0) emit(", ");
         // If parameter is by-reference, pass address
@@ -643,7 +676,6 @@ void CCodeGenerator::visitWriteStmt(WriteStmtNode& node) {
     emitIndent();
     emit("printf(\"");
     for (size_t i = 0; i < node.expressions.size(); ++i) {
-        if (i > 0) emit(" ");
         TypeInfo ti = node.expressions[i] ? inferType(node.expressions[i].get())
                                           : TypeInfo::makeSimple("integer");
         emit(formatSpecifier(ti));
@@ -686,6 +718,10 @@ void CCodeGenerator::visitVariableExpr(VariableExprNode& node) {
 }
 
 void CCodeGenerator::visitLiteralExpr(LiteralExprNode& node) {
+    if (node.literalType == "boolean") {
+        emit(node.value == "true" ? "1" : "0");
+        return;
+    }
     if (node.literalType == "string" && node.value.size() >= 2 &&
         node.value.front() == '\'' && node.value.back() == '\'') {
         std::string content = node.value.substr(1, node.value.size() - 2);
@@ -703,7 +739,8 @@ void CCodeGenerator::visitLiteralExpr(LiteralExprNode& node) {
 
 void CCodeGenerator::visitUnaryExpr(UnaryExprNode& node) {
     if (node.op == "not") {
-        emit("!");
+        TypeInfo operandType = inferType(node.operand.get());
+        emit(operandType.isBoolean() ? "!" : "~");
     } else if (node.op == "-" || node.op == "minus") {
         emit("-");
     } else if (node.op == "+" || node.op == "plus") {
@@ -727,6 +764,18 @@ void CCodeGenerator::visitBinaryExpr(BinaryExprNode& node) {
     else if (op == "<>") op = "!=";
     // <, <=, >, >= and +, -, *, / stay the same
 
+    if (node.op == "+" || node.op == "*" || node.op == "and" || node.op == "or") {
+        std::vector<ExprNode*> leaves;
+        collectBinaryChain(&node, node.op, leaves);
+        emit("(");
+        for (size_t i = 0; i < leaves.size(); ++i) {
+            if (i > 0) emit(" " + op + " ");
+            emitExpr(leaves[i]);
+        }
+        emit(")");
+        return;
+    }
+
     emit("(");
     if (node.left) emitExpr(node.left.get());
     emit(" " + op + " ");
@@ -736,7 +785,7 @@ void CCodeGenerator::visitBinaryExpr(BinaryExprNode& node) {
 
 void CCodeGenerator::visitCallExpr(CallExprNode& node) {
     emit(node.callee + "(");
-    Symbol* sym = symTable_.lookup(node.callee);
+    Symbol* sym = symTable_.lookupCallable(node.callee);
     for (size_t i = 0; i < node.arguments.size(); ++i) {
         if (i > 0) emit(", ");
         if (sym && i < sym->params.size() && sym->params[i].byReference)

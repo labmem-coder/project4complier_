@@ -566,6 +566,9 @@ Grammar buildPascalSGrammar() {
     g.addProduction("const_value", split("- num"));
     g.addProduction("const_value", split("num"));
     g.addProduction("const_value", split("letter"));
+    g.addProduction("const_value", split("string"));
+    g.addProduction("const_value", split("true"));
+    g.addProduction("const_value", split("false"));
 
     // 2. Variables & subprograms
     // var_declarations -> ε | var var_decl_list
@@ -613,6 +616,7 @@ Grammar buildPascalSGrammar() {
 
     // parameter_list -> parameter parameter_list'
     // parameter_list' -> ; parameter parameter_list' | ε
+    g.addProduction("parameter_list", {});
     g.addProduction("parameter_list", split("parameter parameter_list'"));
     g.addProduction("parameter_list'", split("; parameter parameter_list'"));
     g.addProduction("parameter_list'", {}); // ε
@@ -735,9 +739,12 @@ Grammar buildPascalSGrammar() {
     g.addProduction("factor", split("num"));
     g.addProduction("factor", split("string"));
     g.addProduction("factor", split("letter"));
+    g.addProduction("factor", split("true"));
+    g.addProduction("factor", split("false"));
     g.addProduction("factor", split("id factor_id_tail"));
     g.addProduction("factor", split("( expression )"));
     g.addProduction("factor", split("not factor"));
+    g.addProduction("factor", split("+ factor"));
     g.addProduction("factor", split("- factor"));
 
     g.addProduction("factor_id_tail", split("id_varpart"));

@@ -41,6 +41,8 @@ const std::unordered_map<std::string, TokenType>& Lexer::keywordMap() {
         {"break",     TokenType::BREAK},
         {"continue",  TokenType::CONTINUE},
         {"record",    TokenType::RECORD},
+        {"true",      TokenType::TRUE_KW},
+        {"false",     TokenType::FALSE_KW},
         {"div",       TokenType::DIV_KW},
         {"mod",       TokenType::MOD},
         {"and",       TokenType::AND_KW},
@@ -279,7 +281,8 @@ Token Lexer::scanIdentifierOrKeyword(int startLine, int startCol) {
         // Store keyword in its canonical lowercase form
         return {it->second, lower, startLine, startCol};
     }
-    return {TokenType::ID, lexeme, startLine, startCol};
+    // Identifiers are also case-insensitive in Pascal-S.
+    return {TokenType::ID, lower, startLine, startCol};
 }
 
 // ---------------------------------------------------------------------------

@@ -74,6 +74,7 @@ static bool runPipeline(Grammar& g, const std::string& inputFile,
     }
     Lexer lexer(source);
     Parser parser(g, lexer);
+    parser.setTraceEnabled(verbose);
 
     // ---- Stage 1-2: Lex + Parse → AST ----
     bool success = parser.parse();

@@ -89,6 +89,7 @@ public:
     Parser(Grammar& grammar, Lexer& lexer);
 
     bool parse();
+    void setTraceEnabled(bool enabled) { traceEnabled_ = enabled; }
 
     const std::vector<ParseError>& getErrors() const { return errors; }
     const std::vector<LexerError>& getLexerErrors() const;
@@ -126,6 +127,7 @@ private:
         std::string action;
     };
     std::vector<ParseStep> steps;
+    bool traceEnabled_ = false;
 
     std::string currentTerminal() const;
     Token currentToken() const;
