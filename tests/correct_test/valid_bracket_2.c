@@ -1,6 +1,6 @@
 #include <stdio.h>
 
-double y;
+float y;
 
 int main() {
     y = (((1 + 2) / 3) + 5);

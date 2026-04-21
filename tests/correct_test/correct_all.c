@@ -4,10 +4,10 @@ const char* str1;
 const char* str2;
 char ch;
 int i;
-int GetNumber() {
-    int GetNumber_result;
-    GetNumber_result = 42;
-    return GetNumber_result;
+int getnumber() {
+    int getnumber_result;
+    getnumber_result = 42;
+    return getnumber_result;
 }
 
 

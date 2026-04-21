@@ -725,6 +725,82 @@ static void testSemanticMissingFunctionReturn() {
     PASS();
 }
 
+static void testSemanticFunctionResultAliasAssignment() {
+    TEST("Semantic: function result alias assignment counts as return");
+    auto r = runFullPipeline(
+        "program main;\n"
+        "function getint(i: integer): integer;\n"
+        "var getint_result: integer;\n"
+        "begin\n"
+        "  getint_result := i + 1\n"
+        "end;\n"
+        "begin\n"
+        "  write(getint(3))\n"
+        "end.\n"
+    );
+    EXPECT_TRUE(r.parse.success);
+    EXPECT_TRUE(r.semanticSuccess);
+    PASS();
+}
+
+static void testSemanticImplicitResultAssignment() {
+    TEST("Semantic: implicit result assignment counts as return");
+    auto r = runFullPipeline(
+        "program main;\n"
+        "function getint(i: integer): integer;\n"
+        "begin\n"
+        "  result := i + 1\n"
+        "end;\n"
+        "begin\n"
+        "  write(getint(3))\n"
+        "end.\n"
+    );
+    EXPECT_TRUE(r.parse.success);
+    EXPECT_TRUE(r.semanticSuccess);
+    PASS();
+}
+
+static void testSemanticFunctionNameConflictsWithParameter() {
+    TEST("Semantic: function name cannot conflict with parameter name");
+    auto r = runFullPipeline(
+        "program main;\n"
+        "function getint(getint: integer): integer;\n"
+        "begin\n"
+        "  getint := 1\n"
+        "end;\n"
+        "begin\n"
+        "  write(1)\n"
+        "end.\n"
+    );
+    EXPECT_TRUE(r.parse.success);
+    EXPECT_TRUE(!r.semanticSuccess);
+    EXPECT_TRUE(containsErrorMessage(r.semanticErrors,
+        "Parameter name conflicts with function result: 'getint'"));
+    PASS();
+}
+
+static void testSemanticReadIntoFunctionResultCountsAsReturn() {
+    TEST("Semantic: read into function result counts as return");
+    auto r = runFullPipeline(
+        "program main;\n"
+        "function getint: integer;\n"
+        "begin\n"
+        "  read(getint)\n"
+        "end;\n"
+        "function getfloat: real;\n"
+        "begin\n"
+        "  read(result)\n"
+        "end;\n"
+        "begin\n"
+        "  write(getint);\n"
+        "  write(getfloat)\n"
+        "end.\n"
+    );
+    EXPECT_TRUE(r.parse.success);
+    EXPECT_TRUE(r.semanticSuccess);
+    PASS();
+}
+
 static void testSemanticDuplicateCaseLabel() {
     TEST("Semantic: duplicate case labels are reported");
     auto r = runFullPipeline(
@@ -955,6 +1031,128 @@ static void testCodegenFunctionCall() {
     PASS();
 }
 
+static void testCodegenFunctionResultAlias() {
+    TEST("Codegen: explicit function result alias is not duplicated");
+    auto r = runFullPipeline(
+        "program main;\n"
+        "function getint(i: integer): integer;\n"
+        "var getint_result: integer;\n"
+        "begin\n"
+        "  getint_result := i + 1\n"
+        "end;\n"
+        "begin\n"
+        "  write(getint(3))\n"
+        "end.\n"
+    );
+    EXPECT_TRUE(r.parse.success);
+    EXPECT_TRUE(r.semanticSuccess);
+
+    const std::string expected =
+        "#include <stdio.h>\n"
+        "int getint(int i) {\n"
+        "    int getint_result;\n"
+        "    getint_result = (i + 1);\n"
+        "    return getint_result;\n"
+        "}\n"
+        "int main() {\n"
+        "    printf(\"%d\", getint(3));\n"
+        "    return 0;\n"
+        "}";
+    EXPECT_EQ(normalizeCode(r.generatedC), normalizeCode(expected));
+    PASS();
+}
+
+static void testCodegenImplicitResultAlias() {
+    TEST("Codegen: implicit result alias maps to function return");
+    auto r = runFullPipeline(
+        "program main;\n"
+        "function getint(i: integer): integer;\n"
+        "begin\n"
+        "  result := i + 1\n"
+        "end;\n"
+        "begin\n"
+        "  write(getint(3))\n"
+        "end.\n"
+    );
+    EXPECT_TRUE(r.parse.success);
+    EXPECT_TRUE(r.semanticSuccess);
+
+    const std::string expected =
+        "#include <stdio.h>\n"
+        "int getint(int i) {\n"
+        "    int getint_result;\n"
+        "    getint_result = (i + 1);\n"
+        "    return getint_result;\n"
+        "}\n"
+        "int main() {\n"
+        "    printf(\"%d\", getint(3));\n"
+        "    return 0;\n"
+        "}";
+    EXPECT_EQ(normalizeCode(r.generatedC), normalizeCode(expected));
+    PASS();
+}
+
+static void testCodegenDeclaredImplicitResultAlias() {
+    TEST("Codegen: declared result alias reuses local result storage");
+    auto r = runFullPipeline(
+        "program main;\n"
+        "function getint(i: integer): integer;\n"
+        "var result: integer;\n"
+        "begin\n"
+        "  result := i + 1\n"
+        "end;\n"
+        "begin\n"
+        "  write(getint(3))\n"
+        "end.\n"
+    );
+    EXPECT_TRUE(r.parse.success);
+    EXPECT_TRUE(r.semanticSuccess);
+
+    const std::string expected =
+        "#include <stdio.h>\n"
+        "int getint(int i) {\n"
+        "    int result;\n"
+        "    result = (i + 1);\n"
+        "    return result;\n"
+        "}\n"
+        "int main() {\n"
+        "    printf(\"%d\", getint(3));\n"
+        "    return 0;\n"
+        "}";
+    EXPECT_EQ(normalizeCode(r.generatedC), normalizeCode(expected));
+    PASS();
+}
+
+static void testCodegenReadIntoFunctionResult() {
+    TEST("Codegen: read into function result uses return storage address");
+    auto r = runFullPipeline(
+        "program main;\n"
+        "function getint: integer;\n"
+        "begin\n"
+        "  read(getint)\n"
+        "end;\n"
+        "begin\n"
+        "  write(getint)\n"
+        "end.\n"
+    );
+    EXPECT_TRUE(r.parse.success);
+    EXPECT_TRUE(r.semanticSuccess);
+
+    const std::string expected =
+        "#include <stdio.h>\n"
+        "int getint() {\n"
+        "    int getint_result;\n"
+        "    scanf(\"%d\", &getint_result);\n"
+        "    return getint_result;\n"
+        "}\n"
+        "int main() {\n"
+        "    printf(\"%d\", getint());\n"
+        "    return 0;\n"
+        "}";
+    EXPECT_EQ(normalizeCode(r.generatedC), normalizeCode(expected));
+    PASS();
+}
+
 static void testCodegenStringLiteral() {
     TEST("Codegen: writeln with string literal");
     auto r = runFullPipeline(
@@ -1098,6 +1296,10 @@ int main() {
     testSemanticInvalidArrayBounds();
     testSemanticArrayIndexOutOfBounds();
     testSemanticMissingFunctionReturn();
+    testSemanticFunctionResultAliasAssignment();
+    testSemanticImplicitResultAssignment();
+    testSemanticFunctionNameConflictsWithParameter();
+    testSemanticReadIntoFunctionResultCountsAsReturn();
     testSemanticDuplicateCaseLabel();
     testSemanticInvalidOperatorOperands();
     testSemanticWhileConditionMustBeBoolean();
@@ -1120,6 +1322,10 @@ int main() {
 
     testCodegenSimpleProgram();
     testCodegenFunctionCall();
+    testCodegenFunctionResultAlias();
+    testCodegenImplicitResultAlias();
+    testCodegenDeclaredImplicitResultAlias();
+    testCodegenReadIntoFunctionResult();
     testCodegenStringLiteral();
 
     testComments();

@@ -110,8 +110,17 @@ src/pascal_compiler.exe tests/correct_test/correct2.pas
 # 详细输出（打印 AST + 生成的 C 代码）
 src/pascal_compiler.exe --all tests/correct_test/correct4.pas
 
+# 显式指定输入文件
+src/pascal_compiler.exe -i tests/correct_test/correct1.pas
+
 # 指定输出文件
 src/pascal_compiler.exe -o output.c tests/correct_test/correct1.pas
+
+# 使用 -i / -o 显式指定输入输出
+src/pascal_compiler.exe -i tests/correct_test/correct1.pas -o output.c
+
+# 若将可执行文件命名为 pascc，也支持同样的调用方式
+pascc -i tests/correct_test/correct1.pas -o output.c
 
 # 验证生成的 C 代码是否能编译运行
 gcc -o test_output tests/correct_test/correct1.c
@@ -641,4 +650,3 @@ cd src
 5. 运行 `src/pascal_compiler.exe` 对 `tests/semantic_error_test/*.pas` 做语义失败语料回归测试
 
 脚本中的通过 / 失败判定以编译器进程退出码为准，而不是只看 `PARSE SUCCESSFUL` 文本。
-

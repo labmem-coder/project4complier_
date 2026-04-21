@@ -54,6 +54,8 @@ private:
     int indent_ = 0;               // current indentation level
     SymbolTable symTable_;          // local type lookup (rebuilt during traversal)
     std::string currentFunction_;   // enclosing function name (for return-value pattern)
+    std::string currentFunctionResultStorageName_;
+    bool currentFunctionResultDeclaredInBody_ = false;
     bool insideExpr_ = false;       // true when emitting an expression (suppress ';')
 
     // Indentation helpers
@@ -72,6 +74,9 @@ private:
 
     // Emit an expression into the output stream
     void emitExpr(ExprNode* expr);
+    std::string currentFunctionResultName() const;
+    bool isCurrentFunctionResultName(const std::string& name) const;
+    std::string functionBodyResultAliasName(const SubprogramDeclNode& node) const;
 };
 
 #endif

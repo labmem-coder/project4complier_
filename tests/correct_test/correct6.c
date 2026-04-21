@@ -1,8 +1,8 @@
 #include <stdio.h>
 
 int ret;
-int ifWhile() {
-    int ifWhile_result;
+int ifwhile() {
+    int ifwhile_result;
     int a, b;
     a = 0;
     b = 1;
@@ -10,18 +10,18 @@ int ifWhile() {
         for (b = 1; b <= 3; b++) {
         }
         b = (b + 25);
-        ifWhile_result = b;
+        ifwhile_result = b;
     } else {
         for (a = 0; a <= 4; a++) {
             b = (b * 2);
         }
     }
-    ifWhile_result = b;
-    return ifWhile_result;
+    ifwhile_result = b;
+    return ifwhile_result;
 }
 
 
 int main() {
-    printf("%d", ifWhile());
+    printf("%d", ifwhile());
     return 0;
 }

@@ -24,6 +24,8 @@ static void printUsage(const char* prog) {
     std::cerr
         << "Usage:\n"
         << "  " << prog << " <source.pas>               Full pipeline (parse+semantic+codegen)\n"
+        << "  " << prog << " -i <source.pas>            Full pipeline with explicit input file\n"
+        << "  " << prog << " -i <source.pas> -o <out.c> Full pipeline with explicit input/output\n"
         << "  " << prog << " --lex <source.pas>         Lex only (print tokens)\n"
         << "  " << prog << " --grammar                  Print LL(1) grammar\n"
         << "  " << prog << " --first-follow             Print FIRST/FOLLOW sets\n"
@@ -242,8 +244,9 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
-    // ------ Parse mode (default or --all) ------
+    // ------ Parse mode (default, --all, or explicit -i/-o flags) ------
     std::string inputFile;
+    std::string outputFile;
     bool verbose = false;
 
     if (mode == "--all") {
@@ -254,18 +257,48 @@ int main(int argc, char* argv[]) {
         inputFile = argv[2];
         verbose = true;
     } else {
-        inputFile = mode;
-    }
+        for (int i = 1; i < argc; ++i) {
+            std::string arg = argv[i];
 
-    // Check for -o flag
-    std::string outputFile;
-    if (mode == "-o") {
-        if (argc < 4) {
-            std::cerr << "Error: -o requires <output.c> and <source.pas> arguments.\n";
+            if (arg == "-i") {
+                if (i + 1 >= argc) {
+                    std::cerr << "Error: -i requires an input file argument.\n";
+                    return 1;
+                }
+                inputFile = argv[++i];
+                continue;
+            }
+
+            if (arg == "-o") {
+                if (i + 1 >= argc) {
+                    std::cerr << "Error: -o requires an output file argument.\n";
+                    return 1;
+                }
+                outputFile = argv[++i];
+                continue;
+            }
+
+            if (!arg.empty() && arg[0] == '-') {
+                std::cerr << "Error: unsupported option '" << arg << "'.\n";
+                printUsage(argv[0]);
+                return 1;
+            }
+
+            if (inputFile.empty()) {
+                inputFile = arg;
+                continue;
+            }
+
+            std::cerr << "Error: unexpected argument '" << arg << "'.\n";
+            printUsage(argv[0]);
             return 1;
         }
-        outputFile = argv[2];
-        inputFile = argv[3];
+    }
+
+    if (inputFile.empty()) {
+        std::cerr << "Error: no input file provided.\n";
+        printUsage(argv[0]);
+        return 1;
     }
 
     bool success = runPipeline(g, inputFile, verbose, outputFile);

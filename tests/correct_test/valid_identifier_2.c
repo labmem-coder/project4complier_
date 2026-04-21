@@ -1,6 +1,6 @@
 #include <stdio.h>
 
-double number_var;
+float number_var;
 
 int main() {
     number_var = 3.14;

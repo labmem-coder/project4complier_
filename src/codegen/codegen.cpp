@@ -196,6 +196,28 @@ void CCodeGenerator::emitExpr(ExprNode* expr) {
     insideExpr_ = savedInsideExpr;
 }
 
+std::string CCodeGenerator::currentFunctionResultName() const {
+    return currentFunctionResultStorageName_;
+}
+
+bool CCodeGenerator::isCurrentFunctionResultName(const std::string& name) const {
+    return !currentFunction_.empty() &&
+           (name == currentFunction_ || name == currentFunction_ + "_result" || name == "result");
+}
+
+std::string CCodeGenerator::functionBodyResultAliasName(const SubprogramDeclNode& node) const {
+    if (node.headerKind != "function" || !node.body) return "";
+    const std::string resultAlias = node.name + "_result";
+    for (const auto& decl : node.body->varDecls) {
+        auto* varDecl = dynamic_cast<VarDeclNode*>(decl.get());
+        if (!varDecl) continue;
+        for (const auto& name : varDecl->names) {
+            if (name == resultAlias || name == "result") return name;
+        }
+    }
+    return "";
+}
+
 // ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
@@ -382,6 +404,16 @@ void CCodeGenerator::visitSubprogramDecl(SubprogramDeclNode& node) {
     // Enter subprogram scope
     symTable_.enterScope();
     currentFunction_ = (sym.kind == SymbolKind::Function) ? node.name : "";
+    currentFunctionResultStorageName_.clear();
+    currentFunctionResultDeclaredInBody_ = false;
+    if (sym.kind == SymbolKind::Function) {
+        currentFunctionResultStorageName_ = node.name + "_result";
+        const std::string declaredAlias = functionBodyResultAliasName(node);
+        if (!declaredAlias.empty()) {
+            currentFunctionResultStorageName_ = declaredAlias;
+            currentFunctionResultDeclaredInBody_ = true;
+        }
+    }
 
     // Declare parameters in scope
     for (auto& p : node.parameters) {
@@ -397,9 +429,14 @@ void CCodeGenerator::visitSubprogramDecl(SubprogramDeclNode& node) {
     }
 
     // For functions, declare a local return-value variable
-    if (sym.kind == SymbolKind::Function) {
+    if (sym.kind == SymbolKind::Function && !currentFunctionResultDeclaredInBody_) {
         std::string cRetType = pascalTypeToCType(node.returnType);
-        emitLine(cRetType + " " + node.name + "_result;");
+        emitLine(cRetType + " " + currentFunctionResultName() + ";");
+        Symbol retSym;
+        retSym.name = node.name; retSym.kind = SymbolKind::Variable;
+        retSym.type = TypeInfo::makeSimple(node.returnType);
+        symTable_.declare(retSym);
+    } else if (sym.kind == SymbolKind::Function) {
         Symbol retSym;
         retSym.name = node.name; retSym.kind = SymbolKind::Variable;
         retSym.type = TypeInfo::makeSimple(node.returnType);
@@ -411,10 +448,12 @@ void CCodeGenerator::visitSubprogramDecl(SubprogramDeclNode& node) {
 
     // For functions, emit return statement
     if (sym.kind == SymbolKind::Function) {
-        emitLine("return " + node.name + "_result;");
+        emitLine("return " + currentFunctionResultName() + ";");
     }
 
     currentFunction_ = "";
+    currentFunctionResultStorageName_.clear();
+    currentFunctionResultDeclaredInBody_ = false;
     symTable_.exitScope();
 
     indent_--;
@@ -442,8 +481,8 @@ void CCodeGenerator::visitAssignStmt(AssignStmtNode& node) {
     auto* target = dynamic_cast<VariableExprNode*>(node.target.get());
     if (target) {
         // Check if this is a function return-value assignment (funcName := expr)
-        if (!currentFunction_.empty() && target->name == currentFunction_ && target->indices.empty()) {
-            emit(currentFunction_ + "_result = ");
+        if (isCurrentFunctionResultName(target->name) && target->indices.empty()) {
+            emit(currentFunctionResultName() + " = ");
             if (node.value) emitExpr(node.value.get());
             emit(";\n");
             return;
@@ -697,8 +736,8 @@ void CCodeGenerator::visitEmptyStmt(EmptyStmtNode& /*node*/) {
 // ---------------------------------------------------------------------------
 void CCodeGenerator::visitVariableExpr(VariableExprNode& node) {
     // If inside a function and the variable is the function name, use _result
-    if (!currentFunction_.empty() && node.name == currentFunction_ && node.indices.empty()) {
-        emit(currentFunction_ + "_result");
+    if (isCurrentFunctionResultName(node.name) && node.indices.empty()) {
+        emit(currentFunctionResultName());
         return;
     }
 

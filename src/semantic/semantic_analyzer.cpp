@@ -21,6 +21,11 @@ void SemanticAnalyzer::markCurrentFunctionAssigned() {
     }
 }
 
+bool SemanticAnalyzer::isCurrentFunctionResultName(const std::string& name) const {
+    return !currentFunction_.empty() &&
+           (name == currentFunction_ || name == currentFunction_ + "_result" || name == "result");
+}
+
 std::optional<std::string> SemanticAnalyzer::constantValueKey(ExprNode* expr) const {
     if (!expr) return std::nullopt;
     auto* literal = dynamic_cast<LiteralExprNode*>(expr);
@@ -46,6 +51,11 @@ TypeInfo SemanticAnalyzer::inferType(ExprNode* expr) {
         case ASTNodeKind::VariableExpr: {
             auto* ve = static_cast<VariableExprNode*>(expr);
             Symbol* sym = symTable_.lookup(ve->name);
+            if (!sym && isCurrentFunctionResultName(ve->name) &&
+                ve->indices.empty() && ve->fields.empty()) {
+                Symbol* fn = symTable_.lookupFunction(currentFunction_);
+                if (fn) return TypeInfo::makeSimple(fn->returnType);
+            }
             if (!sym) return TypeInfo::makeSimple("void");
             if (sym->kind == SymbolKind::Function && ve->indices.empty() && ve->fields.empty()) {
                 return TypeInfo::makeSimple(sym->returnType);
@@ -244,6 +254,7 @@ void SemanticAnalyzer::visitSubprogramDecl(SubprogramDeclNode& node) {
     if (sym.kind == SymbolKind::Function) {
         functionAssignedStack_.push_back(false);
     }
+    bool functionResultNameConflict = false;
 
     // Declare parameters in the new scope
     for (auto& p : node.parameters) {
@@ -251,6 +262,11 @@ void SemanticAnalyzer::visitSubprogramDecl(SubprogramDeclNode& node) {
         if (pd) {
             TypeInfo pType = TypeInfo::fromString(pd->typeName);
             for (auto& pname : pd->names) {
+                if (sym.kind == SymbolKind::Function &&
+                    (pname == node.name || pname == node.name + "_result" || pname == "result")) {
+                    addError(*pd, "Parameter name conflicts with function result: '" + pname + "'");
+                    functionResultNameConflict = true;
+                }
                 Symbol paramSym;
                 paramSym.name = pname;
                 paramSym.kind = SymbolKind::Parameter;
@@ -268,7 +284,9 @@ void SemanticAnalyzer::visitSubprogramDecl(SubprogramDeclNode& node) {
         retSym.name = node.name;
         retSym.kind = SymbolKind::Variable;
         retSym.type = TypeInfo::makeSimple(node.returnType);
-        symTable_.declare(retSym);  // shadows the function in current scope
+        if (!symTable_.declare(retSym) && !functionResultNameConflict) {
+            addError(node, "Function return identifier conflicts in local scope: '" + node.name + "'");
+        }
     }
 
     if (node.body) node.body->accept(*this);
@@ -304,7 +322,7 @@ void SemanticAnalyzer::visitAssignStmt(AssignStmtNode& node) {
             if (targetSym && targetSym->kind == SymbolKind::Constant) {
                 addError(*ve, "Cannot assign to constant '" + ve->name + "'");
             }
-            if (!currentFunction_.empty() && ve->name == currentFunction_ && ve->indices.empty()) {
+            if (isCurrentFunctionResultName(ve->name) && ve->indices.empty()) {
                 markCurrentFunctionAssigned();
             }
         }
@@ -448,7 +466,11 @@ void SemanticAnalyzer::visitReadStmt(ReadStmtNode& node) {
             v->accept(*this);
             // read arguments should be variables
             auto* ve = dynamic_cast<VariableExprNode*>(v.get());
-            if (!ve) addError(*v, "read() argument must be a variable");
+            if (!ve) {
+                addError(*v, "read() argument must be a variable");
+            } else if (isCurrentFunctionResultName(ve->name) && ve->indices.empty()) {
+                markCurrentFunctionAssigned();
+            }
         }
     }
 }
@@ -463,6 +485,10 @@ void SemanticAnalyzer::visitEmptyStmt(EmptyStmtNode& /*node*/) {}
 
 void SemanticAnalyzer::visitVariableExpr(VariableExprNode& node) {
     Symbol* sym = symTable_.lookup(node.name);
+    if (!sym && isCurrentFunctionResultName(node.name) &&
+        node.indices.empty() && node.fields.empty()) {
+        return;
+    }
     if (!sym) {
         addError(node, "Undeclared identifier: '" + node.name + "'");
         return;

@@ -1,6 +1,6 @@
 #include <stdio.h>
 
-double x;
+float x;
 
 int main() {
     x = 3.14;

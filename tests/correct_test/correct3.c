@@ -1,7 +1,7 @@
 #include <stdio.h>
 
-int ififElse() {
-    int ififElse_result;
+int ififelse() {
+    int ififelse_result;
     int a;
     int b;
     a = 5;
@@ -13,12 +13,12 @@ int ififElse() {
             a = (a + 15);
         }
     }
-    ififElse_result = a;
-    return ififElse_result;
+    ififelse_result = a;
+    return ififelse_result;
 }
 
 
 int main() {
-    printf("%d", ififElse());
+    printf("%d", ififelse());
     return 0;
 }

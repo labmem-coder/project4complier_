@@ -74,6 +74,7 @@ private:
     void addError(const std::string& msg);
     void addError(const ASTNode& node, const std::string& msg);
     void markCurrentFunctionAssigned();
+    bool isCurrentFunctionResultName(const std::string& name) const;
     std::optional<std::string> constantValueKey(ExprNode* expr) const;
 
     // Type inference: determine the result type of an expression subtree.
