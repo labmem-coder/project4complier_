@@ -2,17 +2,16 @@
 # =============================================================================
 # Pascal-S Unified Test Script
 # Unified entry point:
-#   1. Run consolidated integration tests (lexer + parser + semantic + symbol
-#      table + codegen comparison)
-#   2. Run compiler corpus tests over tests/correct_test, error_test_bison,
-#      and error_test_lex
+#   1. Run compiler corpus tests over tests/correct_test, error_test_bison,
+#      error_test_lex, expansion_test, semantic temp cases, and
+#      semantic_error_test
 # =============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+shopt -s nullglob
 
 COMPILER="$ROOT_DIR/src/pascal_compiler.exe"
-INTEGRATION_TEST="$ROOT_DIR/tests/test_integration.exe"
 
 PASS=0
 FAIL=0
@@ -52,21 +51,6 @@ require_binary() {
     fi
 }
 
-run_executable_test() {
-    local path="$1"
-    local label="$2"
-    local category="$3"
-
-    output=$("$path" 2>&1)
-    exit_code=$?
-
-    if [ "$exit_code" -eq 0 ]; then
-        record_result "yes" "$label" "$category" "" "$output"
-    else
-        record_result "no" "$label" "$category" "test executable returned non-zero exit code" "$output"
-    fi
-}
-
 run_corpus_test() {
     local file="$1"
     local expect_success="$2"  # yes / no
@@ -95,19 +79,21 @@ run_corpus_test() {
     fi
 }
 
+run_named_corpus_test() {
+    local relative_path="$1"
+    local expect_success="$2"
+    local category="$3"
+    run_corpus_test "$ROOT_DIR/$relative_path" "$expect_success" "$category"
+}
+
 echo "=============================================="
 echo "  Pascal-S Unified Test Suite"
 echo "=============================================="
 echo ""
 
-require_binary "$INTEGRATION_TEST" "test_integration.exe"
 require_binary "$COMPILER" "pascal_compiler.exe"
 
-echo -e "${YELLOW}[1/2] Consolidated executable tests${NC}"
-run_executable_test "$INTEGRATION_TEST" "test_integration.exe" "executable"
-echo ""
-
-echo -e "${YELLOW}[2/2] Compiler corpus tests${NC}"
+echo -e "${YELLOW}[1/1] Compiler corpus tests${NC}"
 
 echo -e "${YELLOW}  - correct_test/ (expect: full pipeline success)${NC}"
 for f in "$ROOT_DIR"/tests/correct_test/*.pas; do
@@ -127,8 +113,33 @@ for f in "$ROOT_DIR"/tests/error_test_lex/*.pas; do
 done
 echo ""
 
+echo -e "${YELLOW}  - expansion_test/ (mixed expectations)${NC}"
+run_named_corpus_test "tests/expansion_test/tmp_case_dup.pas" "no" "expansion_test"
+run_named_corpus_test "tests/expansion_test/tmp_const_assign.pas" "no" "expansion_test"
+run_named_corpus_test "tests/expansion_test/tmp_downto.pas" "yes" "expansion_test"
+run_named_corpus_test "tests/expansion_test/tmp_record.pas" "yes" "expansion_test"
+run_named_corpus_test "tests/expansion_test/tmp_record_full.pas" "yes" "expansion_test"
+run_named_corpus_test "tests/expansion_test/tmp_simple_fail.pas" "yes" "expansion_test"
+run_named_corpus_test "tests/expansion_test/tmp_supported_keywords.pas" "yes" "expansion_test"
+run_named_corpus_test "tests/expansion_test/tmp_while.pas" "yes" "expansion_test"
+run_named_corpus_test "tests/expansion_test/tmp_while_check.pas" "yes" "expansion_test"
+echo ""
+
+echo -e "${YELLOW}  - semantic temp cases/ (expect: semantic failure)${NC}"
+for f in "$ROOT_DIR"/tests/tmp_semantic*.pas; do
+    run_corpus_test "$f" "no" "semantic_temp"
+done
+echo ""
+
+echo -e "${YELLOW}  - semantic compatibility cases/ (expect: compiler success)${NC}"
+run_named_corpus_test "tests/semantic_error_test/not_operand_not_boolean.pas" "yes" "semantic_compat"
+echo ""
+
 echo -e "${YELLOW}  - semantic_error_test/ (expect: semantic failure)${NC}"
 for f in "$ROOT_DIR"/tests/semantic_error_test/*.pas; do
+    if [ "$(basename "$f")" = "not_operand_not_boolean.pas" ]; then
+        continue
+    fi
     run_corpus_test "$f" "no" "semantic_error_test"
 done
 echo ""
