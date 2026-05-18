@@ -1,0 +1,44 @@
+[
+{
+  "directory": "/Users/labmem/code/project4complier_/build",
+  "command": "/usr/bin/c++  -I/Users/labmem/code/project4complier_/src/lexer -I/Users/labmem/code/project4complier_/src/parser -I/Users/labmem/code/project4complier_/src/semantic -I/Users/labmem/code/project4complier_/src/codegen -std=c++17 -o CMakeFiles/pascal_compiler.dir/src/main.cpp.o -c /Users/labmem/code/project4complier_/src/main.cpp",
+  "file": "/Users/labmem/code/project4complier_/src/main.cpp",
+  "output": "CMakeFiles/pascal_compiler.dir/src/main.cpp.o"
+},
+{
+  "directory": "/Users/labmem/code/project4complier_/build",
+  "command": "/usr/bin/c++  -I/Users/labmem/code/project4complier_/src/lexer -I/Users/labmem/code/project4complier_/src/parser -I/Users/labmem/code/project4complier_/src/semantic -I/Users/labmem/code/project4complier_/src/codegen -std=c++17 -o CMakeFiles/pascal_compiler.dir/src/lexer/lexer.cpp.o -c /Users/labmem/code/project4complier_/src/lexer/lexer.cpp",
+  "file": "/Users/labmem/code/project4complier_/src/lexer/lexer.cpp",
+  "output": "CMakeFiles/pascal_compiler.dir/src/lexer/lexer.cpp.o"
+},
+{
+  "directory": "/Users/labmem/code/project4complier_/build",
+  "command": "/usr/bin/c++  -I/Users/labmem/code/project4complier_/src/lexer -I/Users/labmem/code/project4complier_/src/parser -I/Users/labmem/code/project4complier_/src/semantic -I/Users/labmem/code/project4complier_/src/codegen -std=c++17 -o CMakeFiles/pascal_compiler.dir/src/parser/grammar.cpp.o -c /Users/labmem/code/project4complier_/src/parser/grammar.cpp",
+  "file": "/Users/labmem/code/project4complier_/src/parser/grammar.cpp",
+  "output": "CMakeFiles/pascal_compiler.dir/src/parser/grammar.cpp.o"
+},
+{
+  "directory": "/Users/labmem/code/project4complier_/build",
+  "command": "/usr/bin/c++  -I/Users/labmem/code/project4complier_/src/lexer -I/Users/labmem/code/project4complier_/src/parser -I/Users/labmem/code/project4complier_/src/semantic -I/Users/labmem/code/project4complier_/src/codegen -std=c++17 -o CMakeFiles/pascal_compiler.dir/src/parser/parser.cpp.o -c /Users/labmem/code/project4complier_/src/parser/parser.cpp",
+  "file": "/Users/labmem/code/project4complier_/src/parser/parser.cpp",
+  "output": "CMakeFiles/pascal_compiler.dir/src/parser/parser.cpp.o"
+},
+{
+  "directory": "/Users/labmem/code/project4complier_/build",
+  "command": "/usr/bin/c++  -I/Users/labmem/code/project4complier_/src/lexer -I/Users/labmem/code/project4complier_/src/parser -I/Users/labmem/code/project4complier_/src/semantic -I/Users/labmem/code/project4complier_/src/codegen -std=c++17 -o CMakeFiles/pascal_compiler.dir/src/semantic/symbol_table.cpp.o -c /Users/labmem/code/project4complier_/src/semantic/symbol_table.cpp",
+  "file": "/Users/labmem/code/project4complier_/src/semantic/symbol_table.cpp",
+  "output": "CMakeFiles/pascal_compiler.dir/src/semantic/symbol_table.cpp.o"
+},
+{
+  "directory": "/Users/labmem/code/project4complier_/build",
+  "command": "/usr/bin/c++  -I/Users/labmem/code/project4complier_/src/lexer -I/Users/labmem/code/project4complier_/src/parser -I/Users/labmem/code/project4complier_/src/semantic -I/Users/labmem/code/project4complier_/src/codegen -std=c++17 -o CMakeFiles/pascal_compiler.dir/src/semantic/semantic_analyzer.cpp.o -c /Users/labmem/code/project4complier_/src/semantic/semantic_analyzer.cpp",
+  "file": "/Users/labmem/code/project4complier_/src/semantic/semantic_analyzer.cpp",
+  "output": "CMakeFiles/pascal_compiler.dir/src/semantic/semantic_analyzer.cpp.o"
+},
+{
+  "directory": "/Users/labmem/code/project4complier_/build",
+  "command": "/usr/bin/c++  -I/Users/labmem/code/project4complier_/src/lexer -I/Users/labmem/code/project4complier_/src/parser -I/Users/labmem/code/project4complier_/src/semantic -I/Users/labmem/code/project4complier_/src/codegen -std=c++17 -o CMakeFiles/pascal_compiler.dir/src/codegen/codegen.cpp.o -c /Users/labmem/code/project4complier_/src/codegen/codegen.cpp",
+  "file": "/Users/labmem/code/project4complier_/src/codegen/codegen.cpp",
+  "output": "CMakeFiles/pascal_compiler.dir/src/codegen/codegen.cpp.o"
+}
+]

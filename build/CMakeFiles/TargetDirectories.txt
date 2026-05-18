@@ -1,0 +1,3 @@
+/Users/labmem/code/project4complier_/build/CMakeFiles/pascal_compiler.dir
+/Users/labmem/code/project4complier_/build/CMakeFiles/edit_cache.dir
+/Users/labmem/code/project4complier_/build/CMakeFiles/rebuild_cache.dir
